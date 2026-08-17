@@ -1,0 +1,355 @@
+# English translations for chatwoot package.
+# Copyright (C) 2026 THE chatwoot'S COPYRIGHT HOLDER
+# This file is distributed under the same license as the chatwoot package.
+# Automatically generated, 2026.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: chatwoot 1.0.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-08-14 12:24+0000\n"
+"PO-Revision-Date: 2026-08-14 12:24+0000\n"
+"Last-Translator: Automatically generated\n"
+"Language-Team: none\n"
+"Language: en_US\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+#: src/Config.php:31
+msgid "Chatwoot"
+msgstr "Chatwoot"
+
+#: src/Config.php:115
+#, php-format
+msgid "Could not connect: %s"
+msgstr "Could not connect: %s"
+
+#: src/Config.php:119
+msgid "API Access Token rejected by Chatwoot."
+msgstr "API Access Token rejected by Chatwoot."
+
+#: src/Config.php:123
+msgid "Account ID or Inbox ID not found."
+msgstr "Account ID or Inbox ID not found."
+
+#: src/Config.php:127
+#, php-format
+msgid "The Chatwoot API responded with HTTP code %d."
+msgstr "The Chatwoot API responded with HTTP code %d."
+
+#: src/Config.php:132
+msgid "The API response did not include a Website Token for this Inbox."
+msgstr "The API response did not include a Website Token for this Inbox."
+
+#: src/Config.php:253
+msgid "Incomplete configuration."
+msgstr "Incomplete configuration."
+
+#: src/Config.php:310
+#, php-format
+msgid "HTTP %d while registering the Dashboard App."
+msgstr "HTTP %d while registering the Dashboard App."
+
+#: src/Config.php:818 src/Config.php:863 src/Config.php:1162
+msgid "Unknown"
+msgstr "Unknown"
+
+#: src/Config.php:892 src/Config.php:896
+msgid "Proposed"
+msgstr "Proposed"
+
+#: src/Config.php:893
+msgid "Refused"
+msgstr "Refused"
+
+#: src/Config.php:894
+msgid "Accepted"
+msgstr "Accepted"
+
+#: src/Config.php:965
+msgid "Unnamed file"
+msgstr "Unnamed file"
+
+#: src/Config.php:1136
+msgid "Very low"
+msgstr "Very low"
+
+#: src/Config.php:1137
+msgid "Low"
+msgstr "Low"
+
+#: src/Config.php:1138
+msgid "Medium"
+msgstr "Medium"
+
+#: src/Config.php:1139
+msgid "High"
+msgstr "High"
+
+#: src/Config.php:1140
+msgid "Very high"
+msgstr "Very high"
+
+#: src/Config.php:1141
+msgid "Major"
+msgstr "Major"
+
+#: src/Config.php:1143
+msgid "Not set"
+msgstr "Not set"
+
+#: src/Config.php:1150
+msgid "New"
+msgstr "New"
+
+#: src/Config.php:1151
+msgid "Processing (assigned)"
+msgstr "Processing (assigned)"
+
+#: src/Config.php:1152
+msgid "Processing (planned)"
+msgstr "Processing (planned)"
+
+#: src/Config.php:1153
+msgid "Pending"
+msgstr "Pending"
+
+#: src/Config.php:1154
+msgid "Solved"
+msgstr "Solved"
+
+#: src/Config.php:1155
+msgid "Closed"
+msgstr "Closed"
+
+#: src/Config.php:1598
+msgid "Chatwoot: automatically updates the Inbox Website Token and HMAC Token"
+msgstr ""
+"Chatwoot: automatically updates the Inbox Website Token and HMAC Token"
+
+#: src/Config.php:1623
+msgid "Incomplete or disabled configuration: nothing to update."
+msgstr "Incomplete or disabled configuration: nothing to update."
+
+#: src/Config.php:1635
+#, php-format
+msgid "Failed to update: %s"
+msgstr "Failed to update: %s"
+
+#: src/Config.php:1648
+msgid "Website Token/HMAC Token/widget script successfully updated."
+msgstr "Website Token/HMAC Token/widget script successfully updated."
+
+#: front/config.form.php:15
+msgid "Chatwoot URL"
+msgstr "Chatwoot URL"
+
+#: front/config.form.php:16
+msgid "API Access Token"
+msgstr "API Access Token"
+
+#: front/config.form.php:17
+msgid "Account ID"
+msgstr "Account ID"
+
+#: front/config.form.php:18
+msgid "Inbox ID"
+msgstr "Inbox ID"
+
+#: front/config.form.php:29
+#, php-format
+msgid "Please fill in the required fields: %s."
+msgstr "Please fill in the required fields: %s."
+
+#: front/config.form.php:50
+msgid ""
+"Configuration saved. Website Token and widget script automatically fetched "
+"from the Inbox."
+msgstr ""
+"Configuration saved. Website Token and widget script automatically fetched "
+"from the Inbox."
+
+#: front/config.form.php:58
+#, php-format
+msgid "Configuration saved, but could not fetch the Inbox data: %s"
+msgstr "Configuration saved, but could not fetch the Inbox data: %s"
+
+#: front/config.form.php:90
+msgid ""
+"The \"GLPI\" panel was registered under Integrations > Dashboard Apps in "
+"Chatwoot."
+msgstr ""
+"The \"GLPI\" panel was registered under Integrations > Dashboard Apps in "
+"Chatwoot."
+
+#: front/config.form.php:96
+#, php-format
+msgid "Could not register the ticket panel in Chatwoot: %s"
+msgstr "Could not register the ticket panel in Chatwoot: %s"
+
+#: hook.php:141
+msgid "Keeps the Chatwoot Website Token and HMAC Token automatically in sync."
+msgstr ""
+"Keeps the Chatwoot Website Token and HMAC Token automatically in sync."
+
+#: ajax/test.php:34
+msgid "Fill in URL, API Access Token, Account ID and Inbox ID before testing."
+msgstr ""
+"Fill in URL, API Access Token, Account ID and Inbox ID before testing."
+
+#: ajax/test.php:42
+msgid "Invalid Chatwoot URL. Use the format https://your-chatwoot.com"
+msgstr "Invalid Chatwoot URL. Use the format https://your-chatwoot.com"
+
+#: ajax/test.php:81
+#, php-format
+msgid " Inbox: \"%s\"."
+msgstr " Inbox: \"%s\"."
+
+#: ajax/test.php:83
+msgid ""
+"Connection successful. I detected changes in the Inbox and automatically "
+"updated the configuration."
+msgstr ""
+"Connection successful. I detected changes in the Inbox and automatically "
+"updated the configuration."
+
+#: ajax/test.php:84
+msgid ""
+"Connection successful. No changes detected — everything is already in sync."
+msgstr ""
+"Connection successful. No changes detected — everything is already in sync."
+
+#: templates/config.html.twig
+msgid "Active"
+msgstr "Active"
+
+#: templates/config.html.twig
+msgid "Connection to Chatwoot"
+msgstr "Connection to Chatwoot"
+
+#: templates/config.html.twig
+msgid ""
+"Website Token and HMAC Token don't need to be typed in: they are "
+"automatically fetched from the Chatwoot API when saving, based on the "
+"Account ID and Inbox ID below."
+msgstr ""
+"Website Token and HMAC Token don't need to be typed in: they are "
+"automatically fetched from the Chatwoot API when saving, based on the "
+"Account ID and Inbox ID below."
+
+#: templates/config.html.twig
+msgid "Base address of your Chatwoot instance (no trailing slash)."
+msgstr "Base address of your Chatwoot instance (no trailing slash)."
+
+#: templates/config.html.twig
+msgid "Agent profile > Profile settings > \"Access Token\"."
+msgstr "Agent profile > Profile settings > \"Access Token\"."
+
+#: templates/config.html.twig
+msgid "Widget customization"
+msgstr "Widget customization"
+
+#: templates/config.html.twig
+msgid ""
+"The Chatwoot API does not return the Widget Builder options (position, type,"
+" launcher title) — configure them here to apply them on top of the "
+"automatically fetched script."
+msgstr ""
+"The Chatwoot API does not return the Widget Builder options (position, type,"
+" launcher title) — configure them here to apply them on top of the "
+"automatically fetched script."
+
+#: templates/config.html.twig
+msgid "Position"
+msgstr "Position"
+
+#: templates/config.html.twig
+msgid "Right"
+msgstr "Right"
+
+#: templates/config.html.twig
+msgid "Left"
+msgstr "Left"
+
+#: templates/config.html.twig
+msgid "Bubble type"
+msgstr "Bubble type"
+
+#: templates/config.html.twig
+msgid "Expanded bubble"
+msgstr "Expanded bubble"
+
+#: templates/config.html.twig
+msgid "Standard"
+msgstr "Standard"
+
+#: templates/config.html.twig
+msgid "Launcher title"
+msgstr "Launcher title"
+
+#: templates/config.html.twig
+msgid "Only shows up with the \"Expanded bubble\" type."
+msgstr "Only shows up with the \"Expanded bubble\" type."
+
+#: templates/config.html.twig
+msgid "Dark mode"
+msgstr "Dark mode"
+
+#: templates/config.html.twig
+msgid "Automatic (follows the browser)"
+msgstr "Automatic (follows the browser)"
+
+#: templates/config.html.twig
+msgid "Always light"
+msgstr "Always light"
+
+#: templates/config.html.twig
+msgid "Always dark"
+msgstr "Always dark"
+
+#: templates/config.html.twig
+msgid "Who can see the widget"
+msgstr "Who can see the widget"
+
+#: templates/config.html.twig
+msgid ""
+"Leave all three fields empty to show the widget to every authenticated user."
+" Select profiles, groups, and/or users to restrict visibility to them."
+msgstr ""
+"Leave all three fields empty to show the widget to every authenticated user."
+" Select profiles, groups, and/or users to restrict visibility to them."
+
+#: templates/config.html.twig
+msgid "Profiles"
+msgstr "Profiles"
+
+#: templates/config.html.twig
+msgid "Type to search…"
+msgstr "Type to search…"
+
+#: templates/config.html.twig
+msgid "Groups"
+msgstr "Groups"
+
+#: templates/config.html.twig
+msgid "Users"
+msgstr "Users"
+
+#: templates/config.html.twig
+msgid "Test connection"
+msgstr "Test connection"
+
+#: templates/config.html.twig
+msgid "Nothing found."
+msgstr "Nothing found."
+
+#: templates/config.html.twig
+msgid "Error testing the connection."
+msgstr "Error testing the connection."
+
+#: templates/config.html.twig
+msgid "You don't have permission to change the Chatwoot configuration."
+msgstr "You don't have permission to change the Chatwoot configuration."

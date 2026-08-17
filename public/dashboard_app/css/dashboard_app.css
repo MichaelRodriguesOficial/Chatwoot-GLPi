@@ -1,0 +1,301 @@
+/*
+ * Palette based on Chatwoot's official brand color (#1f93ff — chatwoot.help/hc/handbook/articles/brand-guidelines-4)
+ * and the neutral tones used by Chatwoot's own dashboard. Dark mode follows
+ * the OS preference (prefers-color-scheme): there is currently no confirmed
+ * way to know via postMessage whether Chatwoot itself is in dark mode, so
+ * this is our best approximation.
+ */
+:root {
+  --cw-brand: #1f93ff;
+  --cw-bg: #ffffff;
+  --cw-bg-subtle: #f9fafb;
+  --cw-border: #e5e7eb;
+  --cw-border-subtle: #eceff3;
+  --cw-text: #1f2937;
+  --cw-text-strong: #111827;
+  --cw-text-muted: #8a94a6;
+  --cw-badge-new-bg: #e7f3ff;   --cw-badge-new-fg: #0b5fbf;
+  --cw-badge-progress-bg: #fff4e5; --cw-badge-progress-fg: #a15c00;
+  --cw-badge-pending-bg: #fdf1e7;  --cw-badge-pending-fg: #9a3412;
+  --cw-badge-done-bg: #e6f7ee;     --cw-badge-done-fg: #0f7b48;
+  --cw-error-bg: #fef2f2; --cw-error-fg: #b91c1c;
+  --cw-progress-track: #eceff3;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --cw-bg: #17181c;
+    --cw-bg-subtle: #202127;
+    --cw-border: #2c2e36;
+    --cw-border-subtle: #26272e;
+    --cw-text: #d1d3d9;
+    --cw-text-strong: #f4f5f7;
+    --cw-text-muted: #83868f;
+    --cw-badge-new-bg: #0d2c4d;    --cw-badge-new-fg: #7cc0ff;
+    --cw-badge-progress-bg: #402f0d; --cw-badge-progress-fg: #f2b84b;
+    --cw-badge-pending-bg: #3d2413; --cw-badge-pending-fg: #f2955f;
+    --cw-badge-done-bg: #0d3320;    --cw-badge-done-fg: #6fd39c;
+    --cw-error-bg: #3a1414; --cw-error-fg: #ff8080;
+    --cw-progress-track: #2c2e36;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  padding: 1rem 1.25rem;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--cw-text);
+  background: var(--cw-bg);
+  -webkit-font-smoothing: antialiased;
+}
+h2 {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--cw-text-muted);
+  margin: 0 0 .85rem;
+}
+.cw-toolbar { display: flex; gap: .5rem; margin-bottom: 1rem; }
+.cw-search, .cw-status {
+  padding: .55rem .75rem;
+  border: 1px solid var(--cw-border);
+  border-radius: .5rem;
+  font-size: 13px;
+  font-family: inherit;
+  background: var(--cw-bg-subtle);
+  color: var(--cw-text);
+  transition: border-color .15s ease, background .15s ease;
+}
+.cw-search { flex: 1 1 auto; min-width: 0; }
+.cw-status { flex: 0 0 auto; }
+.cw-search:focus, .cw-status:focus {
+  outline: none;
+  border-color: var(--cw-brand);
+  background: var(--cw-bg);
+}
+.cw-search:disabled, .cw-status:disabled { opacity: .6; }
+.cw-ticket {
+  border: 1px solid var(--cw-border-subtle);
+  border-left: 3px solid var(--cw-border);
+  border-radius: .5rem;
+  padding: .65rem .8rem;
+  margin-bottom: .55rem;
+  cursor: pointer;
+  display: block;
+  color: inherit;
+  background: transparent;
+  width: 100%;
+  text-align: left;
+  font-family: inherit;
+  transition: box-shadow .15s ease, border-color .15s ease;
+}
+.cw-ticket:hover {
+  box-shadow: 0 1px 4px rgba(15, 23, 42, .12);
+  border-left-color: var(--cw-brand);
+}
+.cw-ticket-title {
+  font-weight: 600;
+  font-size: 12.5px;
+  margin-bottom: .35rem;
+  color: var(--cw-text-strong);
+}
+.cw-ticket-line2 {
+  font-size: 11.5px;
+  color: var(--cw-text-muted);
+  display: grid;
+  grid-template-columns: 1fr 96px 118px 128px 64px;
+  column-gap: .6rem;
+  align-items: center;
+}
+.cw-ticket-line2 span {
+  display: inline-flex;
+  align-items: center;
+  gap: .3rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cw-ticket-line2 .cw-col-status { justify-content: flex-start; overflow: visible; }
+.cw-ticket-line2 .cw-col-sla { justify-content: flex-end; }
+.cw-badge {
+  display: inline-block;
+  padding: .12rem .55rem;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .01em;
+  background: var(--cw-badge-new-bg);
+  color: var(--cw-badge-new-fg);
+}
+.cw-badge.status-1 { background: var(--cw-badge-new-bg); color: var(--cw-badge-new-fg); }
+.cw-badge.status-2, .cw-badge.status-3 { background: var(--cw-badge-progress-bg); color: var(--cw-badge-progress-fg); }
+.cw-badge.status-4 { background: var(--cw-badge-pending-bg); color: var(--cw-badge-pending-fg); }
+.cw-badge.status-5, .cw-badge.status-6 { background: var(--cw-badge-done-bg); color: var(--cw-badge-done-fg); }
+.cw-ticket[data-status="1"] { border-left-color: var(--cw-badge-new-fg); }
+.cw-ticket[data-status="2"], .cw-ticket[data-status="3"] { border-left-color: var(--cw-badge-progress-fg); }
+.cw-ticket[data-status="4"] { border-left-color: var(--cw-badge-pending-fg); }
+.cw-ticket[data-status="5"], .cw-ticket[data-status="6"] { border-left-color: var(--cw-badge-done-fg); }
+/*
+ * SLA progress bar: uses the real GLPI deadline (time_to_resolve), but the
+ * color thresholds (75%/100%) are our own approximation — there is no
+ * public documentation confirming the exact values GLPI uses internally to
+ * color its own bar.
+ */
+.cw-progress-track {
+  width: 100%;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--cw-progress-track);
+  overflow: hidden;
+}
+.cw-progress-fill { height: 100%; border-radius: 999px; }
+.cw-progress-fill.sla-green { background: #17a566; }
+.cw-progress-fill.sla-orange { background: #f5a524; }
+.cw-progress-fill.sla-red { background: #e5484d; }
+.cw-progress-fill.sla-none { background: var(--cw-progress-track); }
+.cw-empty { color: var(--cw-text-muted); text-align: center; padding: 2.5rem 0; font-size: 12.5px; }
+.cw-subtitle { font-size: 13px; font-weight: 600; color: var(--cw-text-strong); margin: -.5rem 0 1rem; }
+.cw-error { color: var(--cw-error-fg); padding: .75rem .9rem; background: var(--cw-error-bg); border-radius: .5rem; font-size: 12.5px; }
+.cw-count { color: var(--cw-text-muted); font-size: 11.5px; margin: -.6rem 0 .75rem; }
+
+/* Detail view */
+.cw-back {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  background: none;
+  border: none;
+  color: var(--cw-brand);
+  font-size: 12.5px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  padding: 0 0 1rem;
+}
+.cw-back:hover { text-decoration: underline; }
+.cw-detail-title { font-size: 15px; font-weight: 700; color: var(--cw-text-strong); margin-bottom: .6rem; }
+.cw-detail-row {
+  display: grid;
+  grid-template-columns: 100px 1fr;
+  gap: .3rem .75rem;
+  font-size: 12.5px;
+  padding: .4rem 0;
+  border-bottom: 1px solid var(--cw-border-subtle);
+}
+.cw-detail-row dt { color: var(--cw-text-muted); font-weight: 600; }
+.cw-detail-row dd { margin: 0; color: var(--cw-text); }
+.cw-detail-desc {
+  margin-top: .9rem;
+  padding: .75rem .85rem;
+  background: var(--cw-bg-subtle);
+  border-radius: .5rem;
+  font-size: 12.5px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 260px;
+  overflow-y: auto;
+}
+.cw-section-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--cw-text-muted);
+  margin: 1.25rem 0 .6rem;
+}
+.cw-timeline-item {
+  border: 1px solid var(--cw-border-subtle);
+  border-radius: .6rem;
+  padding: .6rem .75rem;
+  margin-bottom: .5rem;
+  max-width: 88%;
+}
+.cw-timeline-item.from-requester {
+  background: var(--cw-bg-subtle);
+  margin-right: auto;
+}
+.cw-timeline-item.from-staff {
+  background: var(--cw-badge-new-bg);
+  margin-left: auto;
+}
+.cw-timeline-item.is-solution {
+  max-width: 100%;
+}
+.cw-timeline-item.solution-accepted {
+  background: var(--cw-badge-done-bg);
+  border: 1px solid var(--cw-badge-done-fg);
+}
+.cw-timeline-item.solution-proposed {
+  background: var(--cw-badge-new-bg);
+  border: 1px solid var(--cw-badge-new-fg);
+}
+.cw-timeline-item.solution-refused {
+  background: var(--cw-bg-subtle);
+  border: 1px solid var(--cw-border);
+}
+.cw-timeline-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: .5rem;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--cw-text-strong);
+  margin-bottom: .3rem;
+}
+.cw-timeline-head small { font-weight: 500; color: var(--cw-text-muted); }
+.cw-timeline-tag {
+  font-size: 9.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .03em;
+  padding: .05rem .4rem;
+  border-radius: 999px;
+  background: var(--cw-bg);
+  color: var(--cw-text-muted);
+}
+.cw-timeline-body { font-size: 12px; white-space: pre-wrap; word-break: break-word; color: var(--cw-text); }
+.cw-image-gallery {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .4rem;
+  margin-top: .5rem;
+}
+.cw-image-thumb {
+  width: 84px;
+  height: 84px;
+  object-fit: cover;
+  border-radius: .4rem;
+  border: 1px solid var(--cw-border);
+  cursor: pointer;
+  transition: opacity .15s ease;
+}
+.cw-image-thumb:hover { opacity: .85; }
+.cw-attachment {
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  font-size: 12px;
+  padding: .35rem 0;
+  border-bottom: 1px solid var(--cw-border-subtle);
+}
+.cw-attachment:last-child { border-bottom: none; }
+.cw-attachment small { color: var(--cw-text-muted); margin-left: auto; }
+.cw-attachment-link { color: var(--cw-brand); text-decoration: none; }
+.cw-attachment-link:hover { text-decoration: underline; }
+.cw-external {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  margin-top: 1rem;
+  padding: .5rem .8rem;
+  border: 1px solid var(--cw-brand);
+  border-radius: .5rem;
+  color: var(--cw-brand);
+  text-decoration: none;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.cw-external:hover { background: var(--cw-badge-new-bg); }

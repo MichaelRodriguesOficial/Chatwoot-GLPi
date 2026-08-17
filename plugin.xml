@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root>
+   <name>Chatwoot</name>
+   <key>chatwoot</key>
+   <state>stable</state>
+   <logo>https://raw.githubusercontent.com/MichaelRodriguesOficial/Chatwoot-GLPi/main/pics/logo.png</logo>
+   <description>
+      <short>
+         <en>Chatwoot live chat widget for GLPI, with an in-conversation panel showing the requester's tickets.</en>
+         <pt_BR>Widget de chat do Chatwoot no GLPI, com painel dentro da conversa mostrando os chamados do solicitante.</pt_BR>
+      </short>
+      <long>
+         <en>Adds the official Chatwoot widget to authenticated GLPI pages, with automatic Website Token/HMAC Token retrieval, user identification, visibility permissions by profile/group/user, and a "GLPI" Dashboard App inside Chatwoot showing the requester's tickets (search, status filter, SLA progress, full timeline with attachments) without leaving the conversation.</en>
+         <pt_BR>Adiciona o widget oficial do Chatwoot às páginas autenticadas do GLPI, com busca automática de Website Token/HMAC Token, identificação do usuário, permissionamento de visibilidade por perfil/grupo/usuário, e um painel "GLPI" dentro do Chatwoot mostrando os chamados do solicitante (busca, filtro por status, progresso de SLA, timeline completa com anexos) sem sair da conversa.</pt_BR>
+      </long>
+   </description>
+   <homepage>https://github.com/MichaelRodriguesOficial/Chatwoot-GLPi</homepage>
+   <download>https://github.com/MichaelRodriguesOficial/Chatwoot-GLPi/releases</download>
+   <issues>https://github.com/MichaelRodriguesOficial/Chatwoot-GLPi/issues</issues>
+   <readme>https://github.com/MichaelRodriguesOficial/Chatwoot-GLPi/blob/main/README.md</readme>
+   <changelog>https://github.com/MichaelRodriguesOficial/Chatwoot-GLPi/blob/main/CHANGELOG.md</changelog>
+   <authors>
+      <author>Michael Rodrigues</author>
+   </authors>
+   <versions>
+      <version>
+         <num>1.0.0</num>
+         <compatibility>^11.0</compatibility>
+         <download_url>https://github.com/MichaelRodriguesOficial/Chatwoot-GLPi/releases/download/v1.0.0/chatwoot-1.0.0.zip</download_url>
+      </version>
+   </versions>
+   <langs>
+      <lang>en_GB</lang>
+      <lang>pt_BR</lang>
+   </langs>
+   <license>AGPLv3+</license>
+   <tags>
+      <en>
+         <tag>chat</tag>
+         <tag>support</tag>
+         <tag>chatwoot</tag>
+         <tag>helpdesk</tag>
+      </en>
+      <pt_BR>
+         <tag>chat</tag>
+         <tag>suporte</tag>
+         <tag>chatwoot</tag>
+         <tag>atendimento</tag>
+      </pt_BR>
+   </tags>
+   <screenshots>
+      <screenshot>https://raw.githubusercontent.com/MichaelRodriguesOficial/Chatwoot-GLPi/main/screenshots/widget-bubble.png</screenshot>
+      <screenshot>https://raw.githubusercontent.com/MichaelRodriguesOficial/Chatwoot-GLPi/main/screenshots/panel-list.png</screenshot>
+      <screenshot>https://raw.githubusercontent.com/MichaelRodriguesOficial/Chatwoot-GLPi/main/screenshots/panel-detail.png</screenshot>
+   </screenshots>
+</root>

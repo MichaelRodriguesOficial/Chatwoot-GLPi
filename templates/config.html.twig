@@ -1,0 +1,332 @@
+{% import "components/form/fields_macros.html.twig" as fields %}
+{% set csrf = csrf_token() %}
+<div class="center">
+<div class="card chatwoot-config-card">
+<div class="card-header"><h3 class="card-title"><i class="ti ti-message-circle"></i> Chatwoot</h3></div>
+<div class="card-body">
+{% if can_edit %}
+<form name="chatwoot_config" action="{{ path('/plugins/chatwoot/front/config.form.php') }}" method="post">
+<input type="hidden" name="id" value="1">
+<input type="hidden" name="_glpi_csrf_token" value="{{ csrf }}">
+<input type="hidden" name="enabled" value="0">
+
+<div class="chatwoot-status-row">
+  <div class="form-check form-switch mb-0">
+    <input class="form-check-input" type="checkbox" role="switch" id="chatwoot_enabled" name="enabled" value="1" {% if config['enabled'] %}checked{% endif %}>
+  </div>
+  <label class="form-check-label fw-bold mb-0" for="chatwoot_enabled">{{ __('Active', 'chatwoot') }}</label>
+</div>
+
+<div class="chatwoot-section">
+  <div class="chatwoot-section-title"><i class="ti ti-plug"></i> {{ __('Connection to Chatwoot', 'chatwoot') }}</div>
+  <div class="alert alert-info">
+    <i class="ti ti-info-circle"></i>
+    {{ __("Website Token and HMAC Token don't need to be typed in: they are automatically fetched from the Chatwoot API when saving, based on the Account ID and Inbox ID below.", 'chatwoot') }}
+  </div>
+
+  <div class="chatwoot-field">
+    <label for="chatwoot_base_url">{{ __('Chatwoot URL', 'chatwoot') }} *</label>
+    <input type="text" class="form-control" id="chatwoot_base_url" name="base_url" value="{{ config['base_url']|default('') }}" placeholder="https://chat.yourcompany.com">
+    <small class="form-text">{{ __('Base address of your Chatwoot instance (no trailing slash).', 'chatwoot') }}</small>
+  </div>
+
+  <div class="chatwoot-field">
+    <label for="chatwoot_api_key">{{ __('API Access Token', 'chatwoot') }} *</label>
+    <div class="chatwoot-field-wrap">
+      <input type="password" class="form-control" id="chatwoot_api_key" name="api_key" value="{{ config['api_key']|default('') }}">
+    </div>
+    <small class="form-text">{{ __('Agent profile > Profile settings > "Access Token".', 'chatwoot') }}</small>
+  </div>
+
+  <div class="row">
+    <div class="col-md-6">
+      <div class="chatwoot-field">
+        <label for="chatwoot_account_id">{{ __('Account ID', 'chatwoot') }} *</label>
+        <input type="text" class="form-control" id="chatwoot_account_id" name="account_id" value="{{ config['account_id']|default('') }}">
+      </div>
+    </div>
+    <div class="col-md-6">
+      <div class="chatwoot-field">
+        <label for="chatwoot_inbox_id">{{ __('Inbox ID', 'chatwoot') }} *</label>
+        <input type="text" class="form-control" id="chatwoot_inbox_id" name="inbox_id" value="{{ config['inbox_id']|default('') }}">
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="chatwoot-section">
+  <div class="chatwoot-section-title"><i class="ti ti-adjustments"></i> {{ __('Widget customization', 'chatwoot') }}</div>
+  <div class="alert alert-info">
+    <i class="ti ti-info-circle"></i>
+    {{ __('The Chatwoot API does not return the Widget Builder options (position, type, launcher title) — configure them here to apply them on top of the automatically fetched script.', 'chatwoot') }}
+  </div>
+
+  <div class="row">
+    <div class="col-md-4">
+      <div class="chatwoot-field">
+        <label for="chatwoot_widget_position">{{ __('Position', 'chatwoot') }}</label>
+        <select class="form-select" id="chatwoot_widget_position" name="widget_position">
+          <option value="right" {% if (config['widget_position']|default('right')) == 'right' %}selected{% endif %}>{{ __('Right', 'chatwoot') }}</option>
+          <option value="left" {% if config['widget_position'] == 'left' %}selected{% endif %}>{{ __('Left', 'chatwoot') }}</option>
+        </select>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="chatwoot-field">
+        <label for="chatwoot_widget_type">{{ __('Bubble type', 'chatwoot') }}</label>
+        <select class="form-select" id="chatwoot_widget_type" name="widget_type">
+          <option value="expanded_bubble" {% if (config['widget_type']|default('expanded_bubble')) == 'expanded_bubble' %}selected{% endif %}>{{ __('Expanded bubble', 'chatwoot') }}</option>
+          <option value="standard" {% if config['widget_type'] == 'standard' %}selected{% endif %}>{{ __('Standard', 'chatwoot') }}</option>
+        </select>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="chatwoot-field">
+        <label for="chatwoot_widget_launcher_title">{{ __('Launcher title', 'chatwoot') }}</label>
+        <input type="text" class="form-control" id="chatwoot_widget_launcher_title" name="widget_launcher_title" value="{{ config['widget_launcher_title']|default('') }}">
+        <small class="form-text">{{ __('Only shows up with the "Expanded bubble" type.', 'chatwoot') }}</small>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="chatwoot-field">
+        <label for="chatwoot_widget_dark_mode">{{ __('Dark mode', 'chatwoot') }}</label>
+        <select class="form-select" id="chatwoot_widget_dark_mode" name="widget_dark_mode">
+          <option value="auto" {% if (config['widget_dark_mode']|default('auto')) == 'auto' %}selected{% endif %}>{{ __('Automatic (follows the browser)', 'chatwoot') }}</option>
+          <option value="light" {% if config['widget_dark_mode'] == 'light' %}selected{% endif %}>{{ __('Always light', 'chatwoot') }}</option>
+          <option value="dark" {% if config['widget_dark_mode'] == 'dark' %}selected{% endif %}>{{ __('Always dark', 'chatwoot') }}</option>
+        </select>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="chatwoot-section">
+  <div class="chatwoot-section-title"><i class="ti ti-users"></i> {{ __('Who can see the widget', 'chatwoot') }}</div>
+  <div class="alert alert-info">
+    <i class="ti ti-info-circle"></i>
+    {{ __('Leave all three fields empty to show the widget to every authenticated user. Select profiles, groups, and/or users to restrict visibility to them.', 'chatwoot') }}
+  </div>
+
+  <div class="row">
+    <div class="col-md-4">
+      <div class="chatwoot-field">
+        <label>{{ __('Profiles', 'chatwoot') }}</label>
+        <div class="chatwoot-picker" data-itemtype="Profile" data-field-name="target_profiles"
+             data-initial='{{ targets.Profile|json_encode|e('html_attr') }}'
+             data-initial-labels='{{ profile_labels|json_encode|e('html_attr') }}'>
+          <div class="chatwoot-picker-chips"></div>
+          <input type="text" class="form-control chatwoot-picker-input" placeholder="{{ __('Type to search…', 'chatwoot') }}" autocomplete="off">
+          <div class="chatwoot-picker-suggestions"></div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="chatwoot-field">
+        <label>{{ __('Groups', 'chatwoot') }}</label>
+        <div class="chatwoot-picker" data-itemtype="Group" data-field-name="target_groups"
+             data-initial='{{ targets.Group|json_encode|e('html_attr') }}'
+             data-initial-labels='{{ group_labels|json_encode|e('html_attr') }}'>
+          <div class="chatwoot-picker-chips"></div>
+          <input type="text" class="form-control chatwoot-picker-input" placeholder="{{ __('Type to search…', 'chatwoot') }}" autocomplete="off">
+          <div class="chatwoot-picker-suggestions"></div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="chatwoot-field">
+        <label>{{ __('Users', 'chatwoot') }}</label>
+        <div class="chatwoot-picker" data-itemtype="User" data-field-name="target_users"
+             data-initial='{{ targets.User|json_encode|e('html_attr') }}'
+             data-initial-labels='{{ user_labels|json_encode|e('html_attr') }}'>
+          <div class="chatwoot-picker-chips"></div>
+          <input type="text" class="form-control chatwoot-picker-input" placeholder="{{ __('Type to search…', 'chatwoot') }}" autocomplete="off">
+          <div class="chatwoot-picker-suggestions"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="chatwoot-test-result" class="alert d-none chatwoot-result-box" role="alert"></div>
+
+<div class="chatwoot-actions">
+  <button type="submit" name="update" value="1" class="btn btn-primary"><i class="ti ti-device-floppy"></i> {{ _x('button', 'Save') }}</button>
+  <button type="button" id="chatwoot-test-btn" class="btn btn-outline-secondary"><i class="ti ti-plug-connected"></i> {{ __('Test connection', 'chatwoot') }}</button>
+</div>
+</form>
+
+<script>
+(function () {
+    var apiKeyInput = document.getElementById('chatwoot_api_key');
+    if (apiKeyInput) {
+        apiKeyInput.style.paddingRight = '2.5rem';
+        var toggle = document.createElement('button');
+        toggle.type = 'button';
+        toggle.className = 'chatwoot-eye-btn';
+        toggle.innerHTML = '<i class="ti ti-eye"></i>';
+        toggle.setAttribute('aria-label', 'Show/hide');
+        apiKeyInput.parentNode.appendChild(toggle);
+        toggle.addEventListener('click', function () {
+            var revealing = apiKeyInput.type === 'password';
+            apiKeyInput.type = revealing ? 'text' : 'password';
+            toggle.innerHTML = revealing ? '<i class="ti ti-eye-off"></i>' : '<i class="ti ti-eye"></i>';
+        });
+    }
+
+    var searchUrl = '{{ path('/plugins/chatwoot/ajax/search_targets.php') }}';
+
+    function debounce(fn, delay) {
+        var t;
+        return function () {
+            var args = arguments;
+            clearTimeout(t);
+            t = setTimeout(function () { fn.apply(null, args); }, delay);
+        };
+    }
+
+    function initPicker(root) {
+        var itemtype = root.dataset.itemtype;
+        var fieldName = root.dataset.fieldName;
+        var chipsBox = root.querySelector('.chatwoot-picker-chips');
+        var input = root.querySelector('.chatwoot-picker-input');
+        var suggestBox = root.querySelector('.chatwoot-picker-suggestions');
+
+        var initialIds = [];
+        var initialLabels = {};
+        try { initialIds = JSON.parse(root.dataset.initial || '[]'); } catch (e) {}
+        try { initialLabels = JSON.parse(root.dataset.initialLabels || '{}'); } catch (e) {}
+
+        var selected = {};
+
+        function addChip(id, label) {
+            id = String(id);
+            if (selected[id]) return;
+            selected[id] = label;
+
+            var chip = document.createElement('span');
+            chip.className = 'chatwoot-chip';
+            chip.dataset.id = id;
+
+            var text = document.createElement('span');
+            text.textContent = label;
+            chip.appendChild(text);
+
+            var hidden = document.createElement('input');
+            hidden.type = 'hidden';
+            hidden.name = fieldName + '[]';
+            hidden.value = id;
+            chip.appendChild(hidden);
+
+            var removeBtn = document.createElement('button');
+            removeBtn.type = 'button';
+            removeBtn.innerHTML = '&times;';
+            removeBtn.addEventListener('click', function () {
+                delete selected[id];
+                chip.remove();
+            });
+            chip.appendChild(removeBtn);
+
+            chipsBox.appendChild(chip);
+        }
+
+        initialIds.forEach(function (id) {
+            addChip(id, initialLabels[id] || ('#' + id));
+        });
+
+        function renderSuggestions(items) {
+            suggestBox.innerHTML = '';
+            var visible = items.filter(function (it) { return !selected[String(it.id)]; });
+
+            if (visible.length === 0) {
+                var empty = document.createElement('div');
+                empty.className = 'chatwoot-picker-suggestion empty';
+                empty.textContent = '{{ __('Nothing found.', 'chatwoot')|e('js') }}';
+                suggestBox.appendChild(empty);
+            } else {
+                visible.forEach(function (it) {
+                    var row = document.createElement('div');
+                    row.className = 'chatwoot-picker-suggestion';
+                    row.textContent = it.text;
+                    row.addEventListener('click', function () {
+                        addChip(it.id, it.text);
+                        input.value = '';
+                        suggestBox.classList.remove('show');
+                    });
+                    suggestBox.appendChild(row);
+                });
+            }
+            suggestBox.classList.add('show');
+        }
+
+        function search(term) {
+            var url = searchUrl + '?itemtype=' + encodeURIComponent(itemtype) + '&term=' + encodeURIComponent(term);
+            fetch(url)
+                .then(function (r) { return r.json(); })
+                .then(renderSuggestions)
+                .catch(function () { suggestBox.classList.remove('show'); });
+        }
+
+        var debouncedSearch = debounce(search, 250);
+
+        input.addEventListener('focus', function () { search(input.value); });
+        input.addEventListener('input', function () { debouncedSearch(input.value); });
+        document.addEventListener('click', function (ev) {
+            if (!root.contains(ev.target)) {
+                suggestBox.classList.remove('show');
+            }
+        });
+    }
+
+    document.querySelectorAll('.chatwoot-picker').forEach(initPicker);
+
+    var btn = document.getElementById('chatwoot-test-btn');
+    if (!btn) return;
+
+    btn.addEventListener('click', function () {
+        var resultBox = document.getElementById('chatwoot-test-result');
+        var baseUrlInput = document.getElementById('chatwoot_base_url');
+        var apiKeyEl = document.getElementById('chatwoot_api_key');
+        var accountIdInput = document.getElementById('chatwoot_account_id');
+        var inboxIdInput = document.getElementById('chatwoot_inbox_id');
+        var csrfInput = document.querySelector('[name="_glpi_csrf_token"]');
+
+        resultBox.classList.add('d-none');
+        btn.disabled = true;
+
+        var params = new URLSearchParams();
+        params.set('base_url', baseUrlInput ? baseUrlInput.value : '');
+        params.set('api_key', apiKeyEl ? apiKeyEl.value : '');
+        params.set('account_id', accountIdInput ? accountIdInput.value : '');
+        params.set('inbox_id', inboxIdInput ? inboxIdInput.value : '');
+        params.set('_glpi_csrf_token', csrfInput ? csrfInput.value : '');
+
+        fetch('{{ path('/plugins/chatwoot/ajax/test.php') }}', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: params.toString()
+        })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                resultBox.textContent = data.message;
+                resultBox.classList.remove('d-none', 'alert-success', 'alert-danger');
+                resultBox.classList.add(data.success ? 'alert-success' : 'alert-danger');
+                if (data.csrf_token && csrfInput) {
+                    csrfInput.value = data.csrf_token;
+                }
+            })
+            .catch(function () {
+                resultBox.textContent = '{{ __('Error testing the connection.', 'chatwoot')|e('js') }}';
+                resultBox.classList.remove('d-none', 'alert-success');
+                resultBox.classList.add('alert-danger');
+            })
+            .finally(function () {
+                btn.disabled = false;
+            });
+    });
+})();
+</script>
+
+{% else %}
+<div class="alert alert-warning">{{ __("You don't have permission to change the Chatwoot configuration.", 'chatwoot') }}</div>
+{% endif %}
+</div></div></div>
