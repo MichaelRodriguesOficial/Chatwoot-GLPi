@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <root>
-   <name>Chatwoot for GLPI</name>
+   <name>Chatwoot</name>
    <key>chatwoot</key>
    <state>stable</state>
    <logo>https://raw.githubusercontent.com/MichaelRodriguesOficial/Chatwoot-GLPi/main/pics/logo.png</logo>
