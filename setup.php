@@ -2,7 +2,7 @@
 
 use Glpi\Plugin\Hooks;
 
-define('PLUGIN_CHATWOOT_VERSION', '1.0.0');
+define('PLUGIN_CHATWOOT_VERSION', '1.0.1');
 define('PLUGIN_CHATWOOT_MIN_GLPI_VERSION', '11.0.0');
 define('PLUGIN_CHATWOOT_MAX_GLPI_VERSION', '11.9.99');
 
@@ -38,7 +38,7 @@ function plugin_init_chatwoot(): void
     // renames/removes either method.
     $public_no_auth_paths = '#^/avatar\.php$'
         . '|^/dashboard_app/(dashboard_app\.php|css/dashboard_app\.css|js/dashboard_app\.js'
-        . '|dashboard_tickets\.php|dashboard_ticket_detail\.php|dashboard_document\.php)$#';
+        . '|dashboard_identify\.php|dashboard_tickets\.php|dashboard_ticket_detail\.php|dashboard_document\.php)$#';
     if (class_exists(\Glpi\Http\Firewall::class) && method_exists(\Glpi\Http\Firewall::class, 'addPluginStrategyForLegacyScripts')) {
         \Glpi\Http\Firewall::addPluginStrategyForLegacyScripts(
             'chatwoot',
@@ -55,6 +55,7 @@ function plugin_init_chatwoot(): void
     $PLUGIN_HOOKS[Hooks::SECURED_FIELDS]['chatwoot'] = [
         'glpi_plugin_chatwoot_configs.api_key',
         'glpi_plugin_chatwoot_configs.hmac_token',
+        'glpi_plugin_chatwoot_configs.dashboard_app_token',
     ];
 
     Plugin::registerClass(GlpiPlugin\Chatwoot\Config::class, ['addtabon' => [\Config::class]]);

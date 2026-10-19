@@ -19,7 +19,44 @@ class Config extends CommonDBTM
      * Fields stored encrypted (GLPIKey).
      * Kept in sync with Hooks::SECURED_FIELDS in setup.php.
      */
-    public const ENCRYPTED_FIELDS = ['api_key', 'hmac_token'];
+    public const ENCRYPTED_FIELDS = ['api_key', 'hmac_token', 'dashboard_app_token'];
+
+    /** Seconds a capability minted by dashboard_identify.php stays valid. */
+    public const CAPABILITY_TTL = 300;
+
+    /**
+     * Throttle for dashboard_identify.php — the only endpoint that accepts a
+     * raw identifier/phone, and therefore the only one an enumeration attempt
+     * could use. Counted per source IP; sized for a whole team of agents
+     * behind one office NAT (each agent identifies once per conversation and
+     * then reuses the capability for up to CAPABILITY_TTL seconds).
+     */
+    private const ACCESS_LOG_WINDOW_SECONDS = 60;
+    private const ACCESS_LOG_MAX_PER_WINDOW = 60;
+
+    /**
+     * Records an unexpected failure in GLPI's own php-errors log
+     * (files/_log/php-errors.log) without interrupting the request — used by
+     * every graceful-degradation path, so a missing list or label always
+     * leaves a trace instead of failing silently. Toolbox::logInFile() rather
+     * than trigger_error(): in debug mode GLPI 11's error handler may turn a
+     * warning into an exception, which would defeat the fallback itself.
+     */
+    public static function logError(string $where, \Throwable|string $error): void
+    {
+        $message = $error instanceof \Throwable
+            ? sprintf("[chatwoot] %s: %s (%s:%d)\n", $where, $error->getMessage(), basename($error->getFile()), $error->getLine())
+            : sprintf("[chatwoot] %s: %s\n", $where, $error);
+        try {
+            if (class_exists('\\Toolbox') && method_exists('\\Toolbox', 'logInFile')) {
+                \Toolbox::logInFile('php-errors', $message);
+                return;
+            }
+        } catch (\Throwable $ignored) {
+            // Fall through to PHP's own log below.
+        }
+        error_log(rtrim($message));
+    }
 
     public static function getTable($classname = null): string
     {
@@ -102,7 +139,37 @@ class Config extends CommonDBTM
             // Best effort — if this fails for any reason (missing intl
             // extension, unexpected environment, etc.), labels just stay in
             // GLPI's default system language, same as before this existed.
+            self::logError('Switching the request language failed', $e);
         }
+    }
+
+    /**
+     * Validates a Chatwoot base URL before it's ever handed to curl — the
+     * same check `ajax/test.php` already applied on "Test connection", now
+     * also enforced here so every caller (the config save, the hourly cron,
+     * and the test button) is covered, not just one of them (MEDIUM 4).
+     */
+    public static function isValidBaseUrl(string $base_url): bool
+    {
+        return $base_url !== ''
+            && preg_match('#^https?://#i', $base_url) === 1
+            && filter_var($base_url, FILTER_VALIDATE_URL) !== false;
+    }
+
+    /**
+     * Baseline hardening shared by every curl call this plugin makes:
+     * restricts both the initial request and any redirect to http(s) (no
+     * file://, no gopher://, …) and makes TLS verification explicit rather
+     * than relying on curl's compiled-in default.
+     */
+    private static function curlSecurityOptions(): array
+    {
+        return [
+            CURLOPT_PROTOCOLS      => CURLPROTO_HTTP | CURLPROTO_HTTPS,
+            CURLOPT_REDIR_PROTOCOLS => CURLPROTO_HTTP | CURLPROTO_HTTPS,
+            CURLOPT_SSL_VERIFYPEER => true,
+            CURLOPT_SSL_VERIFYHOST => 2,
+        ];
     }
 
     /**
@@ -119,6 +186,11 @@ class Config extends CommonDBTM
     public static function fetchInboxDetails(string $base_url, string $api_key, string $account_id, string $inbox_id): array
     {
         $base_url = rtrim($base_url, '/');
+
+        if (!self::isValidBaseUrl($base_url)) {
+            return ['ok' => false, 'error' => __('Invalid Chatwoot URL. Use the format https://your-chatwoot.com', 'chatwoot')];
+        }
+
         $url = sprintf(
             '%s/api/v1/accounts/%s/inboxes/%s',
             $base_url,
@@ -127,13 +199,15 @@ class Config extends CommonDBTM
         );
 
         $ch = curl_init($url);
-        curl_setopt_array($ch, [
+        curl_setopt_array($ch, self::curlSecurityOptions() + [
             CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_FOLLOWLOCATION => true,
-            CURLOPT_MAXREDIRS      => 5,
+            // Never follow redirects on a request carrying the API Access
+            // Token header — curl replays custom headers across redirects,
+            // including to a different host, which would hand the token to
+            // whoever controls the redirect target (MEDIUM 4 of the review).
+            CURLOPT_FOLLOWLOCATION => false,
             CURLOPT_CONNECTTIMEOUT => 5,
             CURLOPT_TIMEOUT        => 10,
-            CURLOPT_SSL_VERIFYPEER => true,
             CURLOPT_HTTPGET        => true,
             CURLOPT_HTTPHEADER     => ['api_access_token: ' . $api_key, 'Content-Type: application/json'],
             CURLOPT_USERAGENT      => 'GLPI-Chatwoot-Plugin/' . PLUGIN_CHATWOOT_VERSION,
@@ -168,7 +242,14 @@ class Config extends CommonDBTM
             'ok'            => true,
             'website_token' => (string) $data['website_token'],
             'hmac_token'    => (string) ($data['hmac_token'] ?? ''),
-            'widget_script' => self::extractScriptContent((string) ($data['web_widget_script'] ?? '')),
+            // Previously stored the remote web_widget_script verbatim and
+            // executed it on every authenticated GLPI page (MEDIUM 5 of the
+            // 1.0.0 security review: a compromised or redirect-hijacked
+            // Chatwoot instance could return arbitrary JavaScript that would
+            // run on GLPI's own origin). chatwoot.js.php now always uses the
+            // fixed, documented SDK loader instead, so nothing from the API
+            // response is ever persisted or echoed as code again.
+            'widget_script' => '',
             'name'          => (string) ($data['name'] ?? ''),
         ];
     }
@@ -203,7 +284,7 @@ class Config extends CommonDBTM
         }
 
         $ch = curl_init($base_url . '/api/v1/accounts/' . rawurlencode($account_id) . '/contacts/' . $contact_id);
-        curl_setopt_array($ch, [
+        curl_setopt_array($ch, self::curlSecurityOptions() + [
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_CUSTOMREQUEST  => 'PATCH',
             CURLOPT_CONNECTTIMEOUT => 4,
@@ -221,7 +302,7 @@ class Config extends CommonDBTM
     private static function findContactIdByIdentifier(string $base_url, string $api_key, string $account_id, string $identifier): ?int
     {
         $ch = curl_init($base_url . '/api/v1/accounts/' . rawurlencode($account_id) . '/contacts/filter');
-        curl_setopt_array($ch, [
+        curl_setopt_array($ch, self::curlSecurityOptions() + [
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_CUSTOMREQUEST  => 'POST',
             CURLOPT_CONNECTTIMEOUT => 4,
@@ -274,7 +355,7 @@ class Config extends CommonDBTM
         }
 
         $ch = curl_init($base_url . '/api/v1/accounts/' . rawurlencode($account_id));
-        curl_setopt_array($ch, [
+        curl_setopt_array($ch, self::curlSecurityOptions() + [
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_CONNECTTIMEOUT => 4,
             CURLOPT_TIMEOUT        => 6,
@@ -315,6 +396,21 @@ class Config extends CommonDBTM
             return $token;
         }
 
+        $token = bin2hex(random_bytes(32));
+        $item  = self::getInstance();
+        $item->update(['id' => 1, 'dashboard_app_token' => $token]);
+
+        return $token;
+    }
+
+    /**
+     * Forces a brand new integration token regardless of whether one already
+     * exists — the "regenerate token" control the 1.0.0 review found
+     * missing (MEDIUM 3): ensureDashboardAppToken() alone could never revoke
+     * a leaked token because it always keeps the existing value.
+     */
+    public static function rotateDashboardAppToken(): string
+    {
         $token = bin2hex(random_bytes(32));
         $item  = self::getInstance();
         $item->update(['id' => 1, 'dashboard_app_token' => $token]);
@@ -375,7 +471,7 @@ class Config extends CommonDBTM
         }
 
         $ch = curl_init($url);
-        curl_setopt_array($ch, [
+        curl_setopt_array($ch, self::curlSecurityOptions() + [
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_CUSTOMREQUEST  => $method,
             CURLOPT_CONNECTTIMEOUT => 5,
@@ -414,6 +510,204 @@ class Config extends CommonDBTM
     }
 
     /**
+     * Seconds a per-document link stays valid. Long enough for an agent to
+     * read a ticket and click its attachments; short enough that a link
+     * copied out of an access log is useless soon after.
+     */
+    public const DOCUMENT_LINK_TTL = 600;
+
+    /**
+     * A link to ONE document, bound to the user, the ticket and the document
+     * (GLPIKey authenticated encryption — unforgeable and tamper-proof), the
+     * same pattern as an S3 pre-signed URL. Unlike the instance-wide
+     * integration token or the capability, leaking it exposes at most that
+     * single file for a few minutes, so it can live in a URL: the panel then
+     * uses plain <img src>/<a target="_blank"> links, and the file is opened
+     * top-level with the server's own Content-Disposition/nosniff headers.
+     * Relative to the panel page, so it works wherever GLPI is installed.
+     */
+    public static function mintDocumentLink(int $user_id, int $ticket_id, int $doc_id): string
+    {
+        $payload = json_encode([
+            'uid' => $user_id,
+            'tid' => $ticket_id,
+            'did' => $doc_id,
+            'exp' => time() + self::DOCUMENT_LINK_TTL,
+        ]);
+
+        return 'dashboard_document.php?d=' . rawurlencode((new GLPIKey())->encrypt((string) $payload));
+    }
+
+    /**
+     * @return array{uid:int, tid:int, did:int}|null
+     */
+    public static function verifyDocumentLink(string $token): ?array
+    {
+        if ($token === '') {
+            return null;
+        }
+        try {
+            $decrypted = (new GLPIKey())->decrypt($token);
+        } catch (\Throwable $e) {
+            // Not logged on purpose: an invalid or forged token is expected
+            // input on a public endpoint, and logging it would let anyone
+            // flood the log.
+            return null;
+        }
+        $payload = json_decode((string) $decrypted, true);
+        if (
+            !is_array($payload)
+            || empty($payload['uid']) || empty($payload['tid']) || empty($payload['did']) || empty($payload['exp'])
+            || (int) $payload['exp'] < time()
+        ) {
+            return null;
+        }
+
+        return ['uid' => (int) $payload['uid'], 'tid' => (int) $payload['tid'], 'did' => (int) $payload['did']];
+    }
+
+    /**
+     * Mints a short-lived capability for a resolved GLPI user — replaces
+     * passing a raw `identifier`/`phone` to the ticket-data endpoints (see
+     * dashboard_identify.php). Authenticated encryption (GLPIKey, the same
+     * primitive already used by avatar.php) gives both confidentiality and
+     * integrity in one step, so the payload can't be tampered with to swap
+     * the bound user id, and it can't be read without the server's key.
+     *
+     * Also carries the Chatwoot conversation it was minted for (`cid`): a
+     * capability only ever comes out of a real conversation, resolved
+     * server-side through the Chatwoot API (see resolveConversationUser()).
+     *
+     * A single base64 layer: GLPIKey::encrypt() already returns base64, so —
+     * unlike the pre-1.0.1 avatar token — nothing wraps it again.
+     */
+    public static function mintCapability(int $user_id, int $conversation_id = 0): string
+    {
+        $payload = json_encode([
+            'uid' => $user_id,
+            'cid' => $conversation_id,
+            'exp' => time() + self::CAPABILITY_TTL,
+        ], JSON_UNESCAPED_SLASHES);
+        $glpikey = new GLPIKey();
+        return rawurlencode($glpikey->encrypt($payload));
+    }
+
+    /**
+     * Verifies a capability minted above and returns the still-resolvable
+     * user it was bound to (re-checked for is_active/is_deleted at
+     * verification time, not just at mint time) — or null if the capability
+     * is malformed, expired, tampered with, or no longer valid.
+     *
+     * @return array{id:int, name:string, realname:string, firstname:string}|null
+     */
+    public static function verifyCapability(string $capability): ?array
+    {
+        global $DB;
+
+        if ($capability === '' || !$DB->tableExists('glpi_users')) {
+            return null;
+        }
+
+        $glpikey = new GLPIKey();
+
+        try {
+            $decrypted = $glpikey->decrypt(rawurldecode($capability));
+        } catch (\Throwable $e) {
+            // Not logged on purpose: an invalid or forged token is expected
+            // input on a public endpoint, and logging it would let anyone
+            // flood the log.
+            return null;
+        }
+
+        $payload = json_decode((string) $decrypted, true);
+        if (!is_array($payload) || empty($payload['uid']) || empty($payload['exp'])) {
+            return null;
+        }
+        if ((int) $payload['exp'] < time()) {
+            return null;
+        }
+
+        $rows = iterator_to_array($DB->request([
+            'SELECT' => ['id', 'name', 'realname', 'firstname'],
+            'FROM'   => 'glpi_users',
+            'WHERE'  => array_merge(['id' => (int) $payload['uid']], self::activeUserWhere('User')),
+            'LIMIT'  => 1,
+        ]));
+        $user = reset($rows);
+
+        return $user ?: null;
+    }
+
+    /**
+     * Throttle + audit trail for identity resolution (dashboard_identify.php).
+     * Returns false (caller should reject the request with 429) when the
+     * given IP has made too many calls in the recent window — a cheap
+     * mitigation against identifier/phone enumeration and against the full
+     * table scan in findUserIdByPhone() being hammered. Deliberately NOT
+     * applied to the ticket/detail/document endpoints: those already require
+     * a capability bound to one user, so they can't enumerate anyone, and
+     * a single ticket view can legitimately fire a dozen image requests.
+     */
+    public static function checkAndLogAccess(string $context, string $ip, bool $matched = false): bool
+    {
+        global $DB;
+
+        $table = 'glpi_plugin_chatwoot_access_log';
+        if (!$DB->tableExists($table)) {
+            return true;
+        }
+
+        $ip = substr($ip, 0, 45);
+
+        $count = 0;
+        foreach ($DB->request([
+            'COUNT'  => 'c',
+            'FROM'   => $table,
+            'WHERE'  => [
+                'ip'         => $ip,
+                'created_at' => ['>', date('Y-m-d H:i:s', time() - self::ACCESS_LOG_WINDOW_SECONDS)],
+            ],
+        ]) as $row) {
+            $count = (int) $row['c'];
+        }
+
+        $allowed = $count < self::ACCESS_LOG_MAX_PER_WINDOW;
+
+        $DB->insert($table, [
+            'created_at' => date('Y-m-d H:i:s'),
+            'ip'         => $ip,
+            'context'    => substr($context, 0, 32),
+            'matched'    => $matched ? 1 : 0,
+        ]);
+
+        // ~1% chance per call: opportunistic cleanup, no cron needed for a
+        // table that only ever holds a short rolling window of rows.
+        if (random_int(1, 100) === 1) {
+            self::pruneAccessLog();
+        }
+
+        return $allowed;
+    }
+
+    private static function pruneAccessLog(): void
+    {
+        global $DB;
+
+        $table = 'glpi_plugin_chatwoot_access_log';
+        if (!$DB->tableExists($table)) {
+            return;
+        }
+
+        $DB->delete($table, ['created_at' => ['<', date('Y-m-d H:i:s', time() - DAY_TIMESTAMP)]]);
+    }
+
+    /** Best-effort real client IP — only direct REMOTE_ADDR, never a spoofable header. */
+    public static function clientIp(): string
+    {
+        return (string) ($_SERVER['REMOTE_ADDR'] ?? '0.0.0.0');
+    }
+
+    /**
      * Looks up the GLPI user by identifier (username) and returns the
      * tickets where they are the requester, most recent first. Used by the
      * Dashboard App panel — each returned ticket already comes with a direct
@@ -424,11 +718,17 @@ class Config extends CommonDBTM
      *
      * @return array{user_found: bool, user_name?: string, tickets: array<int, array>}
      */
-    public static function getTicketsForIdentifier(string $identifier, string $search = '', int $status = 0, int $limit = 50, string $phone = ''): array
+    public static function getTicketsForUser(int $user_id, string $search = '', int $status = 0, int $limit = 50): array
     {
         global $DB;
 
-        $user = self::resolveUser($identifier, $phone);
+        $rows = iterator_to_array($DB->request([
+            'SELECT' => ['id', 'name', 'realname', 'firstname'],
+            'FROM'   => 'glpi_users',
+            'WHERE'  => array_merge(['id' => $user_id], self::activeUserWhere('User')),
+            'LIMIT'  => 1,
+        ]));
+        $user = reset($rows);
         if (!$user) {
             return ['user_found' => false, 'tickets' => []];
         }
@@ -440,6 +740,13 @@ class Config extends CommonDBTM
             'glpi_tickets_users.type'     => 1, // 1 = CommonITILActor::REQUESTER
             'glpi_tickets.is_deleted'     => 0,
         ];
+
+        $allowed_entities = self::allowedEntityIds();
+        if ($allowed_entities !== null) {
+            // Restriction enabled: empty list fails closed (no entities
+            // allowed), rather than silently behaving as "unrestricted".
+            $where['glpi_tickets.entities_id'] = empty($allowed_entities) ? ['-1'] : $allowed_entities;
+        }
 
         if ($status > 0) {
             $where['glpi_tickets.status'] = $status;
@@ -525,11 +832,17 @@ class Config extends CommonDBTM
             return null;
         }
 
+        // Only active, non-deleted accounts are resolvable through this
+        // unauthenticated surface — mirrors activeUserWhere() below. A
+        // disabled or soft-deleted account shouldn't still be queryable for
+        // its ticket history just because its username/phone is known.
+        $active_where = self::activeUserWhere('User');
+
         if ($identifier !== '') {
             $rows = iterator_to_array($DB->request([
                 'SELECT' => ['id', 'name', 'realname', 'firstname'],
                 'FROM'   => 'glpi_users',
-                'WHERE'  => ['name' => $identifier],
+                'WHERE'  => array_merge(['name' => $identifier], $active_where),
                 'LIMIT'  => 1,
             ]));
             $user = reset($rows);
@@ -544,7 +857,7 @@ class Config extends CommonDBTM
                 $rows = iterator_to_array($DB->request([
                     'SELECT' => ['id', 'name', 'realname', 'firstname'],
                     'FROM'   => 'glpi_users',
-                    'WHERE'  => ['id' => $user_id],
+                    'WHERE'  => array_merge(['id' => $user_id], $active_where),
                     'LIMIT'  => 1,
                 ]));
                 $user = reset($rows);
@@ -555,6 +868,148 @@ class Config extends CommonDBTM
         }
 
         return null;
+    }
+
+    /**
+     * Resolves the GLPI user behind a Chatwoot conversation — the only way
+     * the panel can obtain a capability (HIGH 1 of the 1.0.0 security review).
+     *
+     * The browser only says WHICH conversation is open; WHO the contact is
+     * comes from the Chatwoot API itself (GET /conversations/{id}, using the
+     * configured API Access Token), never from values the browser sends. The
+     * lookup is then exactly the one the panel always did: the contact's
+     * `identifier` (the GLPI login, set by this plugin's widget through
+     * setUser()) first, then its phone number (WhatsApp and other channels
+     * where the contact has no identifier) against GLPI's three phone fields.
+     *
+     * @return array{ok: bool, user?: array|null, error?: string}
+     */
+    public static function resolveConversationUser(int $conversation_id): array
+    {
+        $contact = self::fetchConversationContact($conversation_id);
+        if (!$contact['ok']) {
+            return $contact;
+        }
+
+        return [
+            'ok'   => true,
+            'user' => self::resolveUser($contact['identifier'], $contact['phone']),
+        ];
+    }
+
+    /**
+     * @return array{ok: bool, identifier?: string, phone?: string, error?: string}
+     */
+    private static function fetchConversationContact(int $conversation_id): array
+    {
+        $config     = self::getConfig();
+        $base_url   = rtrim((string) ($config['base_url'] ?? ''), '/');
+        $api_key    = (string) ($config['api_key'] ?? '');
+        $account_id = (string) ($config['account_id'] ?? '');
+
+        if ($conversation_id <= 0) {
+            return ['ok' => false, 'error' => 'invalid_conversation'];
+        }
+        if (!self::isValidBaseUrl($base_url) || $api_key === '' || $account_id === '') {
+            return ['ok' => false, 'error' => 'not_configured'];
+        }
+
+        $ch = curl_init($base_url . '/api/v1/accounts/' . rawurlencode($account_id) . '/conversations/' . $conversation_id);
+        curl_setopt_array($ch, self::curlSecurityOptions() + [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_FOLLOWLOCATION => false,
+            CURLOPT_CONNECTTIMEOUT => 4,
+            CURLOPT_TIMEOUT        => 6,
+            CURLOPT_HTTPHEADER     => ['api_access_token: ' . $api_key, 'Accept: application/json'],
+        ]);
+        $body      = curl_exec($ch);
+        $http_code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curl_err  = curl_error($ch);
+        curl_close($ch);
+
+        if ($http_code === 404) {
+            // Not in this account, or not visible to the API token's agent.
+            return ['ok' => false, 'error' => 'conversation_not_found'];
+        }
+        if ($http_code !== 200) {
+            self::logError(
+                'Chatwoot API: fetching conversation ' . $conversation_id . ' failed',
+                $curl_err !== '' ? $curl_err : 'HTTP ' . $http_code
+            );
+            return ['ok' => false, 'error' => 'chatwoot_unreachable'];
+        }
+
+        $data = json_decode((string) $body, true);
+        if (!is_array($data)) {
+            self::logError('Chatwoot API: unexpected conversation response', 'not JSON');
+            return ['ok' => false, 'error' => 'chatwoot_unreachable'];
+        }
+
+        return ['ok' => true] + self::extractConversationContact($data);
+    }
+
+    /**
+     * Pulls the contact's identifier and phone out of a Chatwoot conversation
+     * payload: `meta.sender` is the conversation's contact (`contact` is
+     * accepted too, for payload variants).
+     *
+     * @return array{identifier: string, phone: string}
+     */
+    public static function extractConversationContact(array $conversation): array
+    {
+        $sender = $conversation['meta']['sender'] ?? $conversation['contact'] ?? [];
+        if (!is_array($sender)) {
+            $sender = [];
+        }
+
+        return [
+            'identifier' => trim((string) ($sender['identifier'] ?? '')),
+            'phone'      => trim((string) ($sender['phone_number'] ?? '')),
+        ];
+    }
+
+    /**
+     * Entities the Dashboard App panel is allowed to surface tickets for,
+     * when the administrator enabled "Restrict to entities" — reuses the
+     * same Profile/Group/User targets table with itemtype 'Entity', so no
+     * extra table is needed. Empty list while the restriction is enabled
+     * means "nothing" (fail closed), not "everything".
+     *
+     * @return int[]|null null = no restriction configured (any entity allowed)
+     */
+    private static function allowedEntityIds(): ?array
+    {
+        $config = self::getConfig();
+        if (empty($config['restrict_entities'])) {
+            return null;
+        }
+
+        $selected = self::getTargets()['Entity'] ?? [];
+
+        // Same convention as GLPI's own recursive entity rights: selecting an
+        // entity also covers every sub-entity below it.
+        $allowed = [];
+        foreach ($selected as $entity_id) {
+            $allowed[] = (int) $entity_id;
+            if (class_exists('\\DbUtils') && method_exists('\\DbUtils', 'getSonsOf')) {
+                foreach ((new \DbUtils())->getSonsOf('glpi_entities', (int) $entity_id) as $son_id) {
+                    $allowed[] = (int) $son_id;
+                }
+            }
+        }
+
+        return array_values(array_unique($allowed));
+    }
+
+    /**
+     * Whether internal/private follow-ups are exposed through the Dashboard
+     * App panel — an explicit administrator opt-in, disabled by default
+     * (HIGH 1 of the 1.0.0 security review: these were always returned
+     * unconditionally).
+     */
+    public static function showPrivateFollowups(): bool
+    {
+        return !empty(self::getConfig()['show_private_followups']);
     }
 
     /**
@@ -727,17 +1182,33 @@ class Config extends CommonDBTM
      * check as the listing, so this can't become a way to snoop on anyone's
      * tickets by guessing the number).
      */
-    public static function getTicketDetail(int $ticket_id, string $identifier, string $phone = ''): ?array
+    public static function getTicketDetailForUser(int $user_id, int $ticket_id): ?array
     {
         global $DB;
 
-        if ($ticket_id <= 0 || (!$DB->tableExists('glpi_users'))) {
+        if ($ticket_id <= 0 || $user_id <= 0 || (!$DB->tableExists('glpi_users'))) {
             return null;
         }
 
-        $user = self::resolveUser($identifier, $phone);
-        if (!$user) {
+        $rows = iterator_to_array($DB->request([
+            'SELECT' => ['id'],
+            'FROM'   => 'glpi_users',
+            'WHERE'  => array_merge(['id' => $user_id], self::activeUserWhere('User')),
+            'LIMIT'  => 1,
+        ]));
+        if (!reset($rows)) {
             return null;
+        }
+
+        $where = [
+            'glpi_tickets_users.users_id' => $user_id,
+            'glpi_tickets_users.type'     => 1, // requester
+            'glpi_tickets.id'             => $ticket_id,
+            'glpi_tickets.is_deleted'     => 0,
+        ];
+        $allowed_entities = self::allowedEntityIds();
+        if ($allowed_entities !== null) {
+            $where['glpi_tickets.entities_id'] = empty($allowed_entities) ? ['-1'] : $allowed_entities;
         }
 
         $criteria = [
@@ -757,12 +1228,7 @@ class Config extends CommonDBTM
             'INNER JOIN' => [
                 'glpi_tickets' => ['FKEY' => ['glpi_tickets_users' => 'tickets_id', 'glpi_tickets' => 'id']],
             ],
-            'WHERE'  => [
-                'glpi_tickets_users.users_id' => (int) $user['id'],
-                'glpi_tickets_users.type'     => 1, // requester
-                'glpi_tickets.id'             => $ticket_id,
-                'glpi_tickets.is_deleted'     => 0,
-            ],
+            'WHERE'  => $where,
             'LIMIT'  => 1,
         ];
 
@@ -796,13 +1262,13 @@ class Config extends CommonDBTM
         // Ticket content in GLPI comes with HTML — before converting to
         // plain text, we keep the IDs of embedded images (captured from the
         // raw HTML), so they can be shown separately as thumbnails (served
-        // by our own proxy, see streamTicketDocument()).
+        // by our own proxy, see streamTicketDocumentForUser()).
         $raw_content        = (string) ($row['content'] ?? '');
         $description_images = self::extractInlineImageIds($raw_content);
         $description        = trim(html_entity_decode(strip_tags($raw_content), ENT_QUOTES, 'UTF-8'));
         $sla                 = self::computeSlaProgress($row);
 
-        return [
+        $detail = [
             'id'          => (int) $row['id'],
             'title'       => (string) $row['name'],
             'status'      => self::ticketStatusLabel((int) $row['status']),
@@ -817,9 +1283,59 @@ class Config extends CommonDBTM
             'date'        => (string) $row['date'],
             'date_mod'    => (string) $row['date_mod'],
             'url'         => '/front/ticket.form.php?id=' . (int) $row['id'],
-            'timeline'    => self::getTicketTimeline($ticket_id, (int) $user['id']),
-            'attachments' => self::getTicketAttachments($ticket_id),
+            'timeline'    => self::getTicketTimeline($ticket_id, $user_id, self::showPrivateFollowups()),
         ];
+
+        // Documents attached to the ticket itself AND to the follow-ups and
+        // solution shown above — in GLPI 11 a file added while replying is
+        // linked to the ITILFollowup, not to the Ticket. Built from the
+        // timeline the panel actually shows, so a private follow-up hidden by
+        // configuration never leaks its attachments either. Images already
+        // shown as thumbnails are left out of the lists.
+        $inline_ids = $description_images;
+        foreach ($detail['timeline'] as $item) {
+            foreach ((array) ($item['images'] ?? []) as $id) {
+                $inline_ids[] = (int) $id;
+            }
+        }
+        $all_attachments = self::getTicketAttachments($ticket_id, $detail['timeline'], $inline_ids);
+        $by_item = [];
+        foreach ($all_attachments as $attachment) {
+            $by_item[$attachment['source']][] = $attachment;
+        }
+        foreach ($detail['timeline'] as &$item) {
+            $item['attachments'] = array_map(
+                static fn ($a) => ['id' => $a['id'], 'name' => $a['name'], 'size' => $a['size']],
+                $by_item[$item['item_key']] ?? []
+            );
+            unset($item['item_key']);
+        }
+        unset($item);
+        $detail['attachments'] = array_map(
+            static fn ($a) => ['id' => $a['id'], 'name' => $a['name'], 'size' => $a['size']],
+            $all_attachments
+        );
+
+        // One short-lived link per document shown in this view (embedded
+        // images in the description and follow-ups, plus attachments), so
+        // the panel can use plain <img src>/<a href> — see mintDocumentLink().
+        $doc_ids = $detail['description_images'];
+        foreach ($detail['timeline'] as $item) {
+            foreach ((array) ($item['images'] ?? []) as $id) {
+                $doc_ids[] = $id;
+            }
+        }
+        foreach ($detail['attachments'] as $attachment) {
+            $doc_ids[] = $attachment['id'] ?? 0;
+        }
+        $detail['doc_links'] = [];
+        foreach (array_unique(array_map('intval', $doc_ids)) as $doc_id) {
+            if ($doc_id > 0) {
+                $detail['doc_links'][$doc_id] = self::mintDocumentLink($user_id, $ticket_id, $doc_id);
+            }
+        }
+
+        return $detail;
     }
 
     /**
@@ -851,9 +1367,11 @@ class Config extends CommonDBTM
      * Builds the ticket timeline (follow-ups from both sides + solution), in
      * chronological order. Each item is marked whether it's from the
      * requester themselves (to style it like a conversation, matching the
-     * rest of the panel) and whether it's a private follow-up (an internal
-     * note, not visible to the requester in the GLPI portal, but shown here
-     * because whoever sees this panel is the agent, who needs the full context).
+     * rest of the panel). Private follow-ups (internal notes, not visible to
+     * the requester in the GLPI portal) are only included when $show_private
+     * is true — an explicit administrator opt-in (Config::showPrivateFollowups()),
+     * since by default a Chatwoot agent should see the same thing the
+     * requester would see in the GLPI portal, not internal technician notes.
      *
      * Each query is protected by a column check + try/catch: if a field name
      * doesn't match this installation's schema, that piece is simply left
@@ -861,7 +1379,7 @@ class Config extends CommonDBTM
      *
      * @return array<int, array>
      */
-    private static function getTicketTimeline(int $ticket_id, int $requester_id): array
+    private static function getTicketTimeline(int $ticket_id, int $requester_id, bool $show_private = false): array
     {
         global $DB;
 
@@ -869,7 +1387,7 @@ class Config extends CommonDBTM
 
         if ($DB->tableExists('glpi_itilfollowups')) {
             try {
-                $select = ['glpi_itilfollowups.content', 'glpi_itilfollowups.date_creation'];
+                $select = ['glpi_itilfollowups.id', 'glpi_itilfollowups.content', 'glpi_itilfollowups.date_creation'];
                 $has_private = $DB->fieldExists('glpi_itilfollowups', 'is_private');
                 $has_users   = $DB->fieldExists('glpi_itilfollowups', 'users_id');
                 $has_source  = $DB->fieldExists('glpi_itilfollowups', 'requesttypes_id') && $DB->tableExists('glpi_requesttypes');
@@ -899,14 +1417,19 @@ class Config extends CommonDBTM
                 }
 
                 foreach ($DB->request($criteria) as $frow) {
+                    $is_private = $has_private && !empty($frow['is_private']);
+                    if ($is_private && !$show_private) {
+                        continue;
+                    }
                     $author = trim((string) ($frow['firstname'] ?? '') . ' ' . (string) ($frow['realname'] ?? ''))
                         ?: (string) ($frow['name'] ?? __('Unknown', 'chatwoot'));
                     $raw = (string) ($frow['content'] ?? '');
                     $timeline[] = [
+                        'item_key'     => 'ITILFollowup:' . (int) $frow['id'],
                         'type'         => 'followup',
                         'author'       => $author,
                         'is_requester' => $has_users && (int) ($frow['users_id'] ?? 0) === $requester_id,
-                        'is_private'   => $has_private && !empty($frow['is_private']),
+                        'is_private'   => $is_private,
                         'source'       => $has_source ? (string) ($frow['source_name'] ?? '') : '',
                         'date'         => (string) ($frow['date_creation'] ?? ''),
                         'content'      => trim(html_entity_decode(strip_tags($raw), ENT_QUOTES, 'UTF-8')),
@@ -917,12 +1440,13 @@ class Config extends CommonDBTM
                 // Schema different than expected on this installation: no
                 // follow-ups in the timeline, but the rest of the ticket
                 // keeps working normally.
+                self::logError('Loading the ticket follow-ups failed', $e);
             }
         }
 
         if ($DB->tableExists('glpi_itilsolutions')) {
             try {
-                $select = ['glpi_itilsolutions.content', 'glpi_itilsolutions.date_creation'];
+                $select = ['glpi_itilsolutions.id', 'glpi_itilsolutions.content', 'glpi_itilsolutions.date_creation'];
                 $has_status = $DB->fieldExists('glpi_itilsolutions', 'status');
                 $has_users  = $DB->fieldExists('glpi_itilsolutions', 'users_id');
                 if ($has_status) {
@@ -948,6 +1472,7 @@ class Config extends CommonDBTM
                         ?: (string) ($srow['name'] ?? __('Unknown', 'chatwoot'));
                     $raw = (string) ($srow['content'] ?? '');
                     $timeline[] = [
+                        'item_key'     => 'ITILSolution:' . (int) $srow['id'],
                         'type'         => 'solution',
                         'author'       => $author,
                         'is_requester' => $has_users && (int) ($srow['users_id'] ?? 0) === $requester_id,
@@ -962,6 +1487,7 @@ class Config extends CommonDBTM
             } catch (\Throwable $e) {
                 // Same as above: no solution in the timeline, rest of the
                 // ticket keeps working fine.
+                self::logError('Loading the ticket solution failed', $e);
             }
         }
 
@@ -983,12 +1509,17 @@ class Config extends CommonDBTM
 
     /**
      * Lists the ticket's attachments (id, name, size). The actual download
-     * goes through streamTicketDocument(), which checks again that the
+     * goes through streamTicketDocumentForUser(), which checks again that the
      * document belongs to this ticket before serving any byte.
      *
      * @return array<int, array{id: int, name: string, size: string}>
      */
-    private static function getTicketAttachments(int $ticket_id): array
+    /**
+     * @param array<int, array> $timeline   items as built by getTicketTimeline() (already privacy-filtered)
+     * @param int[]             $exclude_ids documents already displayed as inline thumbnails
+     * @return array<int, array{id:int, name:string, size:string, source:string}>
+     */
+    private static function getTicketAttachments(int $ticket_id, array $timeline = [], array $exclude_ids = []): array
     {
         global $DB;
 
@@ -1004,7 +1535,7 @@ class Config extends CommonDBTM
             $has_doc_deleted  = $DB->fieldExists('glpi_documents', 'is_deleted');
             $has_link_deleted = $DB->fieldExists('glpi_documents_items', 'is_deleted');
 
-            $select = ['glpi_documents.id'];
+            $select = ['glpi_documents.id', 'glpi_documents_items.itemtype', 'glpi_documents_items.items_id'];
             if ($has_name) {
                 $select[] = 'glpi_documents.name';
             }
@@ -1015,7 +1546,20 @@ class Config extends CommonDBTM
                 $select[] = 'glpi_documents.filesize';
             }
 
-            $where = ['glpi_documents_items.itemtype' => 'Ticket', 'glpi_documents_items.items_id' => $ticket_id];
+            $ids_by_type = ['ITILFollowup' => [], 'ITILSolution' => []];
+            foreach ($timeline as $item) {
+                [$type, $id] = array_pad(explode(':', (string) ($item['item_key'] ?? ''), 2), 2, '');
+                if (isset($ids_by_type[$type]) && (int) $id > 0) {
+                    $ids_by_type[$type][] = (int) $id;
+                }
+            }
+            $or = [['glpi_documents_items.itemtype' => 'Ticket', 'glpi_documents_items.items_id' => $ticket_id]];
+            foreach ($ids_by_type as $type => $ids) {
+                if (!empty($ids)) {
+                    $or[] = ['glpi_documents_items.itemtype' => $type, 'glpi_documents_items.items_id' => $ids];
+                }
+            }
+            $where = [['OR' => $or]];
             // Deleted documents/links (trash bin) should not show up here —
             // without this check, old "ghost" entries could get mixed in
             // with the real attachments.
@@ -1035,14 +1579,25 @@ class Config extends CommonDBTM
                     'glpi_documents' => ['FKEY' => ['glpi_documents_items' => 'documents_id', 'glpi_documents' => 'id']],
                 ],
                 'WHERE' => $where,
+                'ORDER' => 'glpi_documents.id',
             ]) as $drow) {
                 $doc_id = (int) ($drow['id'] ?? 0);
-                if ($doc_id > 0 && isset($seen[$doc_id])) {
+                if ($doc_id <= 0 || in_array($doc_id, $exclude_ids, true)) {
                     continue;
                 }
-                $seen[$doc_id] = true;
+                $source = (string) $drow['itemtype'] . ':' . (int) $drow['items_id'];
+                if (isset($seen[$doc_id])) {
+                    // Same file linked to both the ticket and a follow-up/
+                    // solution: keep the more specific place, so it shows
+                    // up under that follow-up rather than only at ticket level.
+                    if ($drow['itemtype'] !== 'Ticket') {
+                        $attachments[$seen[$doc_id]]['source'] = $source;
+                    }
+                    continue;
+                }
+                $seen[$doc_id] = count($attachments);
 
-                $name = self::completeFileExtension(
+                $name = self::documentDisplayName(
                     trim((string) ($drow['name'] ?? '')),
                     trim((string) ($drow['filename'] ?? ''))
                 );
@@ -1051,14 +1606,18 @@ class Config extends CommonDBTM
                 }
 
                 $attachments[] = [
-                    'id'   => $doc_id,
-                    'name' => $name,
-                    'size' => $has_filesize ? self::formatFileSize((int) ($drow['filesize'] ?? 0)) : '',
+                    'id'     => $doc_id,
+                    'name'   => $name,
+                    'size'   => $has_filesize ? self::formatFileSize((int) ($drow['filesize'] ?? 0)) : '',
+                    'source' => $source,
                 ];
             }
         } catch (\Throwable $e) {
             // Schema different than expected on this installation: no
-            // attachments list, but the rest of the ticket keeps working normally.
+            // attachments list, but the rest of the ticket keeps working
+            // normally — logged instead of being swallowed silently, so the
+            // cause can actually be found.
+            self::logError('Loading the ticket attachments failed', $e);
         }
 
         return $attachments;
@@ -1072,30 +1631,60 @@ class Config extends CommonDBTM
      *
      * @return array{path: string, mime: string, name: string}|null
      */
-    public static function streamTicketDocument(int $ticket_id, string $identifier, int $doc_id, string $phone = ''): ?array
+    public static function streamTicketDocumentForUser(int $user_id, int $ticket_id, int $doc_id): ?array
     {
         global $DB;
 
-        if ($ticket_id <= 0 || $doc_id <= 0) {
+        if ($ticket_id <= 0 || $doc_id <= 0 || $user_id <= 0) {
             return null;
         }
         if (!$DB->tableExists('glpi_users') || !$DB->tableExists('glpi_documents')) {
             return null;
         }
 
-        $user = self::resolveUser($identifier, $phone);
-        if (!$user) {
+        $rows = iterator_to_array($DB->request([
+            'SELECT' => ['id'],
+            'FROM'   => 'glpi_users',
+            'WHERE'  => array_merge(['id' => $user_id], self::activeUserWhere('User')),
+            'LIMIT'  => 1,
+        ]));
+        if (!reset($rows)) {
             return null;
         }
 
-        // The ticket needs to belong to this user as requester...
+        // The ticket needs to belong to this user as requester, and (if
+        // configured) be in an allowed entity...
+        // Every column table-qualified: glpi_tickets has its own `type`
+        // column (incident/request), so an unqualified `type` here is
+        // ambiguous once glpi_tickets is joined, and MySQL rejects the query.
+        $ticket_where = [
+            'glpi_tickets_users.users_id'   => $user_id,
+            'glpi_tickets_users.type'       => 1, // 1 = CommonITILActor::REQUESTER
+            'glpi_tickets_users.tickets_id' => $ticket_id,
+            'glpi_tickets.is_deleted'       => 0,
+        ];
         $owns_ticket = iterator_to_array($DB->request([
+            'SELECT' => ['glpi_tickets_users.tickets_id'],
             'FROM'  => 'glpi_tickets_users',
-            'WHERE' => ['users_id' => (int) $user['id'], 'type' => 1, 'tickets_id' => $ticket_id],
+            'INNER JOIN' => [
+                'glpi_tickets' => ['FKEY' => ['glpi_tickets_users' => 'tickets_id', 'glpi_tickets' => 'id']],
+            ],
+            'WHERE' => $ticket_where,
             'LIMIT' => 1,
         ]));
         if (empty($owns_ticket)) {
             return null;
+        }
+        $allowed_entities = self::allowedEntityIds();
+        if ($allowed_entities !== null) {
+            $in_entity = iterator_to_array($DB->request([
+                'FROM'  => 'glpi_tickets',
+                'WHERE' => ['id' => $ticket_id, 'entities_id' => empty($allowed_entities) ? ['-1'] : $allowed_entities],
+                'LIMIT' => 1,
+            ]));
+            if (empty($in_entity)) {
+                return null;
+            }
         }
 
         // ...and the document needs to actually be linked to this ticket
@@ -1114,10 +1703,16 @@ class Config extends CommonDBTM
             }
 
             if (!$linked && $DB->tableExists('glpi_itilfollowups')) {
+                $followup_where = ['itemtype' => 'Ticket', 'items_id' => $ticket_id];
+                // Same visibility rule as the timeline: a private follow-up's
+                // files are only served when private follow-ups are enabled.
+                if (!self::showPrivateFollowups() && $DB->fieldExists('glpi_itilfollowups', 'is_private')) {
+                    $followup_where['is_private'] = 0;
+                }
                 $followup_ids = array_column(iterator_to_array($DB->request([
                     'SELECT' => ['id'],
                     'FROM'   => 'glpi_itilfollowups',
-                    'WHERE'  => ['itemtype' => 'Ticket', 'items_id' => $ticket_id],
+                    'WHERE'  => $followup_where,
                 ])), 'id');
                 if (!empty($followup_ids)) {
                     $via_followup = iterator_to_array($DB->request([
@@ -1160,12 +1755,24 @@ class Config extends CommonDBTM
             return null;
         }
 
-        $path = rtrim(GLPI_DOC_DIR, '/') . '/' . ltrim((string) $doc['filepath'], '/');
-        if (!is_file($path)) {
+        // Resolve and re-confirm the path is really still inside GLPI_DOC_DIR
+        // — realpath() collapses any "../" the stored filepath might contain,
+        // closing the traversal gap GLPI core's own Toolbox::getFileAsResponse()
+        // guards against but this hand-rolled concatenation didn't.
+        $doc_dir       = rtrim((string) realpath(GLPI_DOC_DIR), '/');
+        $candidate     = $doc_dir . '/' . ltrim((string) $doc['filepath'], '/');
+        $resolved_path = realpath($candidate);
+        if (
+            $doc_dir === ''
+            || $resolved_path === false
+            || !str_starts_with($resolved_path, $doc_dir . '/')
+            || !is_file($resolved_path)
+        ) {
             return null;
         }
+        $path = $resolved_path;
 
-        $name = self::completeFileExtension(
+        $name = self::documentDisplayName(
             trim((string) ($doc['name'] ?? '')),
             trim((string) ($doc['filename'] ?? ''))
         );
@@ -1181,21 +1788,72 @@ class Config extends CommonDBTM
     }
 
     /**
-     * GLPI's "name" field is an editable title and doesn't always include
-     * the file extension — completes it from the real filename (the stored
-     * physical name), if it doesn't have one yet. Used both in the
-     * attachments listing and in the actual download, so the two never diverge.
+     * Mime types allowed to be displayed `inline` — the same allow-list GLPI
+     * core applies in Toolbox::getFileAsResponse() (image/* minus the
+     * explicitly-excluded image/svg+xml, see glpi-project/glpi#3873, plus
+     * application/pdf). Everything else is always forced to `attachment`,
+     * closing the stored-XSS gap of HIGH 2 in the 1.0.0 security review.
      */
-    private static function completeFileExtension(string $name, string $filename): string
+    private static function canDisplayInline(string $mime): bool
     {
-        if ($name === '') {
-            return $filename;
+        $mime = strtolower(trim($mime));
+        if ($mime === 'image/svg+xml') {
+            return false;
         }
+        return $mime === 'application/pdf' || str_starts_with($mime, 'image/');
+    }
+
+    /**
+     * Serves a file resolved by streamTicketDocumentForUser() (path already
+     * confirmed to be inside GLPI_DOC_DIR via realpath()).
+     *
+     * Written with plain header()/readfile() on purpose instead of returning
+     * core's Toolbox::getFileAsResponse() Symfony Response: this is a legacy
+     * script whose output GLPI 11 buffers, and Response::send() ends the
+     * request early under PHP-FPM (fastcgi_finish_request()), which would drop
+     * the buffered body and leave attachments empty. The headers below apply
+     * the same rules core does — the review's own accepted alternative for
+     * HIGH 2: `inline` only inside the allow-list, `attachment` otherwise,
+     * `X-Content-Type-Options: nosniff` always, plus a CSP sandbox so even a
+     * mislabelled file can never run script on GLPI's origin.
+     *
+     * @param array{path: string, mime: string, name: string} $file
+     */
+    public static function serveDocument(array $file): void
+    {
+        $mime        = (string) ($file['mime'] ?? '');
+        $mime        = preg_match('#^[a-z0-9.+-]+/[a-z0-9.+-]+$#i', $mime) === 1 ? $mime : 'application/octet-stream';
+        $disposition = self::canDisplayInline($mime) ? 'inline' : 'attachment';
+
+        // RFC 6266: ASCII fallback in filename="", the real UTF-8 name in filename*=.
+        $name     = (string) ($file['name'] ?? 'document');
+        $fallback = preg_replace('/[^A-Za-z0-9._ -]/', '_', $name) ?: 'document';
+
+        header('Content-Type: ' . $mime);
+        header('X-Content-Type-Options: nosniff');
+        if ($mime !== 'application/pdf') {
+            // Not for PDFs: Chrome's built-in viewer refuses sandboxed documents.
+            header("Content-Security-Policy: sandbox; default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'");
+        }
+        header('Content-Disposition: ' . $disposition . '; filename="' . $fallback . '"; filename*=UTF-8\'\'' . rawurlencode($name));
+        header('Cache-Control: private, max-age=3600');
+        header('Content-Length: ' . (string) filesize($file['path']));
+        readfile($file['path']);
+    }
+
+    /**
+     * The name to show and to download a document under — the same one GLPI's
+     * own timeline shows: `filename`, the original name of the uploaded file.
+     * GLPI fills `name` with an auto-generated title for files uploaded through
+     * a ticket or follow-up ("Document Ticket 521515" / "Documento do Chamado
+     * 521515"), so `name` is only a fallback, completed with the extension.
+     * (The physical file on disk is `filepath`, never shown.) Used both in the
+     * attachments list and in the actual download, so the two never diverge.
+     */
+    private static function documentDisplayName(string $name, string $filename): string
+    {
         if ($filename !== '') {
-            $ext = pathinfo($filename, PATHINFO_EXTENSION);
-            if ($ext !== '' && !preg_match('/\.' . preg_quote($ext, '/') . '$/i', $name)) {
-                $name .= '.' . $ext;
-            }
+            return $filename;
         }
         return $name;
     }
@@ -1352,7 +2010,9 @@ class Config extends CommonDBTM
         $avatar_url = '';
         if (!empty($u->fields['picture'])) {
             $glpikey = new GLPIKey();
-            $token   = rawurlencode(base64_encode($glpikey->encrypt((string) $user_id)));
+            // GLPIKey::encrypt() already returns base64 — no need to wrap it
+            // in a second layer (avatar.php decodes a single layer to match).
+            $token   = rawurlencode($glpikey->encrypt((string) $user_id));
             $scheme  = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
             $host    = (string) ($_SERVER['HTTP_HOST'] ?? '');
             $avatar_url = $scheme . '://' . $host . '/plugins/chatwoot/avatar.php?t=' . $token;
@@ -1368,23 +2028,6 @@ class Config extends CommonDBTM
             'country'      => $country_name,
             'country_code' => $country_code,
         ];
-    }
-
-    /**
-     * Chatwoot returns the embed script already built, wrapped in
-     * <script>...</script>. Since our file is loaded as plain .js (not
-     * HTML), we extract only the JS content from inside the tags — the rest
-     * is used exactly as Chatwoot sent it, without rewriting anything of our own.
-     */
-    private static function extractScriptContent(string $raw): string
-    {
-        if ($raw === '') {
-            return '';
-        }
-        if (preg_match('#<script\b[^>]*>(.*)</script>#is', $raw, $matches)) {
-            return trim($matches[1]);
-        }
-        return trim($raw);
     }
 
     public function prepareInputForUpdate($input)
@@ -1439,6 +2082,7 @@ class Config extends CommonDBTM
             'profile_labels' => self::getLabelsByIds('Profile', $targets['Profile']),
             'group_labels'   => self::getLabelsByIds('Group', $targets['Group']),
             'user_labels'    => self::getLabelsByIds('User', $targets['User']),
+            'entity_labels'  => self::getLabelsByIds('Entity', $targets['Entity'] ?? []),
         ]);
     }
 
@@ -1457,7 +2101,7 @@ class Config extends CommonDBTM
     {
         global $DB;
 
-        $result = ['Profile' => [], 'Group' => [], 'User' => []];
+        $result = ['Profile' => [], 'Group' => [], 'User' => [], 'Entity' => []];
         $table  = self::targetsTable();
 
         if (!$DB->tableExists($table)) {
@@ -1476,7 +2120,7 @@ class Config extends CommonDBTM
     /**
      * Replaces the list of profiles/groups/users authorized to see the widget.
      */
-    public static function saveTargets(array $profile_ids, array $group_ids, array $user_ids): void
+    public static function saveTargets(array $profile_ids, array $group_ids, array $user_ids, array $entity_ids = []): void
     {
         global $DB;
 
@@ -1496,6 +2140,9 @@ class Config extends CommonDBTM
         }
         foreach ($user_ids as $id) {
             $rows[] = ['itemtype' => 'User', 'items_id' => (int) $id];
+        }
+        foreach ($entity_ids as $id) {
+            $rows[] = ['itemtype' => 'Entity', 'items_id' => (int) $id];
         }
 
         foreach ($rows as $row) {
@@ -1553,6 +2200,10 @@ class Config extends CommonDBTM
         'Profile' => ['table' => 'glpi_profiles', 'name_fields' => ['name']],
         'Group'   => ['table' => 'glpi_groups', 'name_fields' => ['name']],
         'User'    => ['table' => 'glpi_users', 'name_fields' => ['realname', 'firstname', 'name']],
+        // Not "who can see the widget" like the three above — reused by
+        // allowedEntityIds() to scope the Dashboard App panel's ticket
+        // queries when "Restrict to entities" is enabled.
+        'Entity'  => ['table' => 'glpi_entities', 'name_fields' => ['completename', 'name']],
     ];
 
     private static function formatTargetLabel(string $itemtype, array $row): string
@@ -1560,6 +2211,9 @@ class Config extends CommonDBTM
         if ($itemtype === 'User') {
             $label = trim((string) ($row['firstname'] ?? '') . ' ' . (string) ($row['realname'] ?? ''));
             return $label !== '' ? $label . ' (' . $row['name'] . ')' : (string) $row['name'];
+        }
+        if ($itemtype === 'Entity') {
+            return (string) ($row['completename'] ?? $row['name'] ?? '');
         }
         return (string) ($row['name'] ?? '');
     }
@@ -1730,7 +2384,7 @@ class Config extends CommonDBTM
         ]);
 
         $task->addVolume(1);
-        $task->log(__('Website Token/HMAC Token/widget script successfully updated.', 'chatwoot'));
+        $task->log(__('Website Token/HMAC Token successfully updated.', 'chatwoot'));
 
         return 1;
     }

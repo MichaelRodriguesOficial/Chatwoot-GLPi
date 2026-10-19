@@ -31,11 +31,14 @@
   </div>
 
   <div class="chatwoot-field">
-    <label for="chatwoot_api_key">{{ __('API Access Token', 'chatwoot') }} *</label>
+    <label for="chatwoot_api_key">{{ __('API Access Token', 'chatwoot') }} {% if not config['api_key'] %}*{% endif %}</label>
     <div class="chatwoot-field-wrap">
-      <input type="password" class="form-control" id="chatwoot_api_key" name="api_key" value="{{ config['api_key']|default('') }}">
+      <input type="password" class="form-control" id="chatwoot_api_key" name="api_key" value=""
+             placeholder="{{ config['api_key'] ? __('•••••••• (configured — leave blank to keep)', 'chatwoot') : '' }}"
+             autocomplete="new-password">
     </div>
-    <small class="form-text">{{ __('Agent profile > Profile settings > "Access Token".', 'chatwoot') }}</small>
+    <small class="form-text">{{ __('Agent profile > Profile settings > "Access Token". Never re-displayed once saved — leave blank to keep the current value.', 'chatwoot') }}</small>
+    <small class="form-text">{{ __('Use an administrator\'s token (or one from an agent who is a member of every inbox where the GLPI panel is used, e.g. the website widget and WhatsApp): the panel identifies each conversation\'s contact through it.', 'chatwoot') }}</small>
   </div>
 
   <div class="row">
@@ -144,6 +147,47 @@
         </div>
       </div>
     </div>
+  </div>
+</div>
+
+<div class="chatwoot-section">
+  <div class="chatwoot-section-title"><i class="ti ti-shield-lock"></i> {{ __('Dashboard App panel security', 'chatwoot') }}</div>
+  <div class="alert alert-info">
+    <i class="ti ti-info-circle"></i>
+    {{ __('The "GLPI" panel inside Chatwoot has no GLPI session — these options control exactly what it is allowed to expose.', 'chatwoot') }}
+  </div>
+
+  <div class="chatwoot-status-row">
+    <div class="form-check form-switch mb-0">
+      <input class="form-check-input" type="checkbox" role="switch" id="chatwoot_show_private_followups" name="show_private_followups" value="1" {% if config['show_private_followups'] %}checked{% endif %}>
+    </div>
+    <label class="form-check-label mb-0" for="chatwoot_show_private_followups">{{ __('Show internal/private follow-ups to Chatwoot agents', 'chatwoot') }}</label>
+  </div>
+  <small class="form-text">{{ __('Public follow-ups (the ticket history the requester also sees) are always shown. This option only controls follow-ups marked as Private in GLPI — technicians\' internal notes. Off by default.', 'chatwoot') }}</small>
+
+  <div class="chatwoot-status-row" style="margin-top:.75rem;">
+    <div class="form-check form-switch mb-0">
+      <input class="form-check-input" type="checkbox" role="switch" id="chatwoot_restrict_entities" name="restrict_entities" value="1" {% if config['restrict_entities'] %}checked{% endif %}>
+    </div>
+    <label class="form-check-label mb-0" for="chatwoot_restrict_entities">{{ __('Restrict the panel to specific entities', 'chatwoot') }}</label>
+  </div>
+  <div class="chatwoot-field" style="margin-top:.5rem;">
+    <div class="chatwoot-picker" data-itemtype="Entity" data-field-name="target_entities"
+         data-initial='{{ targets.Entity|json_encode|e('html_attr') }}'
+         data-initial-labels='{{ entity_labels|json_encode|e('html_attr') }}'>
+      <div class="chatwoot-picker-chips"></div>
+      <input type="text" class="form-control chatwoot-picker-input" placeholder="{{ __('Type to search…', 'chatwoot') }}" autocomplete="off">
+      <div class="chatwoot-picker-suggestions"></div>
+    </div>
+    <small class="form-text">{{ __('Selecting an entity also includes its sub-entities. When enabled with no entity selected, the panel shows no tickets at all, rather than every entity.', 'chatwoot') }}</small>
+  </div>
+
+  <div class="chatwoot-status-row" style="margin-top:1rem;">
+    <button type="submit" name="rotate_token" value="1" class="btn btn-outline-danger btn-sm"
+            onclick="return confirm('{{ __('Regenerate the Dashboard panel token? The panel will stop working in Chatwoot until it reloads with the new one.', 'chatwoot')|e('js') }}');">
+      <i class="ti ti-refresh"></i> {{ __('Regenerate panel token', 'chatwoot') }}
+    </button>
+    <small class="form-text" style="margin-left:.5rem;">{{ __('Use this if the token may have leaked (e.g. an agent who had access left).', 'chatwoot') }}</small>
   </div>
 </div>
 

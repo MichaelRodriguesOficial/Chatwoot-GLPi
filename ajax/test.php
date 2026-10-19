@@ -28,6 +28,13 @@ $api_key    = trim((string) ($_POST['api_key'] ?? ''));
 $account_id = trim((string) ($_POST['account_id'] ?? ''));
 $inbox_id   = trim((string) ($_POST['inbox_id'] ?? ''));
 
+// The API Access Token field is always rendered blank on the config screen
+// (the stored secret is never echoed back), so blank here means "test with
+// the token already saved".
+if ($api_key === '') {
+    $api_key = trim((string) (ChatwootConfig::getConfig()['api_key'] ?? ''));
+}
+
 if ($base_url === '' || $api_key === '' || $account_id === '' || $inbox_id === '') {
     plugin_chatwoot_json_response([
         'success' => false,

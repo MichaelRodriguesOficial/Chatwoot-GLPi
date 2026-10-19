@@ -273,6 +273,7 @@ h2 {
   transition: opacity .15s ease;
 }
 .cw-image-thumb:hover { opacity: .85; }
+.cw-image-gallery > a { display: block; line-height: 0; }
 .cw-attachment {
   display: flex;
   align-items: center;
@@ -282,6 +283,7 @@ h2 {
   border-bottom: 1px solid var(--cw-border-subtle);
 }
 .cw-attachment:last-child { border-bottom: none; }
+.cw-timeline-item .cw-attachment { border-bottom: none; padding: .3rem 0 0; margin-top: .3rem; border-top: 1px solid var(--cw-border-subtle); }
 .cw-attachment small { color: var(--cw-text-muted); margin-left: auto; }
 .cw-attachment-link { color: var(--cw-brand); text-decoration: none; }
 .cw-attachment-link:hover { text-decoration: underline; }

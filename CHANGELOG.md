@@ -1,5 +1,95 @@
 # Changelog
 
+## 1.0.1 — Security hardening
+
+Addresses all 8 findings (2 HIGH, 3 MEDIUM, 3 LOW) from the GLPI Plugins catalog's pre-publication
+security review of 1.0.0.
+
+### HIGH
+
+- The panel no longer tells GLPI who the contact is. It only sends the id of the open Chatwoot
+  conversation; a new endpoint, `dashboard_identify.php`, fetches that conversation's contact
+  through the Chatwoot API (`GET /conversations/{id}`) and runs the same lookup as before —
+  identifier (GLPI login) first, then phone number — so the GLPI widget and WhatsApp conversations
+  keep working, but a leaked integration token can no longer be used to name an arbitrary GLPI user.
+  It mints a short-lived (5 minute) capability — authenticated-encrypted with `GLPIKey`, bound to
+  one GLPI user and one conversation — that the ticket list and detail endpoints require; documents
+  use per-document links minted with the ticket detail. Contacts with only a phone number
+  (WhatsApp) now also load the panel. The API Access Token should be an administrator's (or belong
+  to an agent who is a member of every inbox where the panel is used).
+- Internal/private follow-ups are only exposed through the panel if an administrator explicitly
+  enables "Show internal/private follow-ups to Chatwoot agents" (off by default).
+- The panel's ticket queries can optionally be restricted to a chosen set of entities (selecting an
+  entity also covers its sub-entities).
+- Only active, non-deleted GLPI accounts can be resolved.
+- Identity resolution (`dashboard_identify.php`)
+  is rate-limited per IP address, with a lightweight audit log of lookups. The ticket/detail/document
+  endpoints are not throttled: they already require a capability (or a per-document link) bound to
+  one user, and a single ticket view legitimately fires several image requests.
+- Ticket attachments and embedded images are served with GLPI core's own inline allow-list (images
+  except SVG, and PDF — the same rules as `Toolbox::getFileAsResponse()`); everything else is forced
+  to `attachment`, always with `X-Content-Type-Options: nosniff`, a CSP sandbox, RFC 6266 filename
+  encoding, and a `realpath()` check that the file stays inside GLPI's document folder. Previously
+  `Content-Disposition: inline` was applied unconditionally, including to an attacker-controlled
+  `text/html` attachment. (Written with `header()`/`readfile()` rather than core's Symfony
+  `Response`, whose `send()` ends the request early under PHP-FPM and dropped the file body.)
+
+### MEDIUM
+
+- The Dashboard App integration token is now encrypted at rest and registered under
+  `Hooks::SECURED_FIELDS`. It — and the new capability — travel as request headers rather than URL
+  query parameters, so neither lands in access logs, browser history, or the `Referer` header; the
+  panel page also sends `Referrer-Policy: no-referrer`. Attachments/images use per-document links
+  minted when a ticket is opened — bound to one user, one ticket and one document, valid for 10
+  minutes — so a link copied out of a log exposes at most that one file, briefly.
+- A "Regenerate panel token" control lets administrators revoke a potentially leaked token on demand.
+- Outbound requests to the Chatwoot API never follow redirects while carrying the API Access Token
+  header, and are restricted to `http`/`https` only. The Chatwoot URL is now validated before saving
+  the configuration (previously only the "Test connection" button validated it).
+- The widget loader on GLPI's own pages no longer executes JavaScript returned by the Chatwoot API —
+  it always uses the documented, static `sdk.js` loader, so it stays subject to your
+  Content-Security-Policy.
+
+### LOW
+
+- The panel's `postMessage` handler now checks `event.origin` against the configured Chatwoot
+  instance, and the panel sends a `Content-Security-Policy: frame-ancestors` header so it can't be
+  framed by an arbitrary site.
+- The configuration form now builds its saved fields from an explicit allow-list instead of the whole
+  `$_POST`, so a crafted request can no longer overwrite `dashboard_app_token`/`dashboard_app_id`.
+- The API Access Token field on the configuration screen is always rendered blank; leaving it blank
+  on save keeps the existing value, so the decrypted secret is never re-emitted into the page.
+
+### Other
+
+- Dropped the Dashboard App widget-script storage path entirely (superseded by the fix above) and
+  the vestigial pre-1.0.0 upgrade branches in the install routine.
+- Upgrading from 1.0.0 encrypts the existing Dashboard App token in place, so the panel already
+  registered in Chatwoot keeps working without re-saving the configuration.
+- The panel never mixes up contacts when the agent switches conversations: an identity lookup still
+  in flight for the previous contact is discarded, and the previous contact's phone number is no
+  longer reused as a fallback for the new one. An expired capability is renewed automatically.
+- Translations: every new configuration string is translated (pt_BR, en_GB, en_US), and the panel's
+  "invalid token" message now comes from its translation dictionary.
+- `sanity.php` checked paths one directory above the plugin root and always failed; fixed.
+- The panel now lists files attached to follow-ups and to the solution, not only those attached
+  directly to the ticket (in GLPI 11, a file added while replying is linked to the follow-up). Each
+  follow-up shows its own files right under it, and the "Attachments" section lists them all. Files
+  of a private follow-up follow the same visibility rule as the follow-up itself, both in the list
+  and in the download endpoint.
+- Attachments are listed and downloaded under their real upload name (GLPI's `filename`, the same
+  one GLPI's own timeline shows) instead of GLPI's auto-generated title ("Document Ticket 123").
+- The panel's CSS/JS URLs are versioned by file content, so a browser can never keep running a
+  cached script against newer server endpoints after the plugin files are replaced.
+- The plugin logo now lives at the plugin root (`logo.png`), where GLPI's plugin list looks for it,
+  so the list shows the Chatwoot logo instead of a generic "C" placeholder.
+- Unexpected failures (timeline, solution, attachments, language switch, ticket/document endpoints)
+  are now written to GLPI's `files/_log/php-errors.log` instead of being swallowed silently.
+  Invalid/forged tokens on the public endpoints stay unlogged on purpose, so they can't be used to
+  flood the log.
+- PHPUnit suite for the security logic (`tests/`) and a CI workflow running lint, the sanity check
+  and the tests on PHP 8.1–8.4. Neither is shipped in the release zip.
+
 ## 1.0.0 — Initial release
 
 First public version. Summary of everything the plugin does:

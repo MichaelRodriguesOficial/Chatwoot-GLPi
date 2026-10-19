@@ -18,6 +18,7 @@ $files = [
     'public/dashboard_app/js/dashboard_app.js',
     'public/dashboard_app/locales/en.json',
     'public/dashboard_app/locales/pt_BR.json',
+    'public/dashboard_app/dashboard_identify.php',
     'public/dashboard_app/dashboard_tickets.php',
     'public/dashboard_app/dashboard_ticket_detail.php',
     'public/dashboard_app/dashboard_document.php',
@@ -26,7 +27,7 @@ $files = [
     'locales/pt_BR.mo',
 ];
 foreach ($files as $f) {
-    if (!is_file(__DIR__ . '/../' . $f)) {
+    if (!is_file(__DIR__ . '/' . $f)) {
         fwrite(STDERR, "Missing: $f\n");
         exit(1);
     }

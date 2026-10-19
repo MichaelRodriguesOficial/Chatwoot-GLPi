@@ -10,13 +10,46 @@ Session::checkRight('config', UPDATE);
 
 $config = ChatwootConfig::getInstance();
 
+if (isset($_POST['rotate_token'])) {
+    // Regenerates the Dashboard App integration token on demand — the
+    // control the 1.0.0 security review found missing (MEDIUM 3): without
+    // it, a leaked token could never be revoked short of manual SQL.
+    $new_token = ChatwootConfig::rotateDashboardAppToken();
+    $current   = ChatwootConfig::getConfig();
+
+    if (!empty($current['base_url']) && !empty($current['account_id'])) {
+        $scheme    = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+        $host      = (string) ($_SERVER['HTTP_HOST'] ?? '');
+        $panel_url = $scheme . '://' . $host . '/plugins/chatwoot/dashboard_app/dashboard_app.php?t=' . $new_token;
+
+        $current['dashboard_app_token'] = $new_token;
+        $dashboard = ChatwootConfig::registerDashboardApp($current, $panel_url);
+        if ($dashboard['ok']) {
+            $config->update(['id' => 1, 'dashboard_app_id' => $dashboard['id']]);
+        }
+    }
+
+    Session::addMessageAfterRedirect(
+        __('Dashboard panel token regenerated. The previous token no longer works.', 'chatwoot'),
+        false,
+        INFO
+    );
+
+    Html::redirect('/plugins/chatwoot/front/config.php');
+}
+
 if (isset($_POST['update'])) {
     $required = [
         'base_url'   => __('Chatwoot URL', 'chatwoot'),
-        'api_key'    => __('API Access Token', 'chatwoot'),
         'account_id' => __('Account ID', 'chatwoot'),
         'inbox_id'   => __('Inbox ID', 'chatwoot'),
     ];
+    // The API Access Token field is always rendered blank (the stored secret
+    // is never echoed back into the page), so it's only mandatory while there
+    // is no token saved yet; afterwards blank means "keep the current one".
+    if (trim((string) (ChatwootConfig::getConfig()['api_key'] ?? '')) === '') {
+        $required = ['api_key' => __('API Access Token', 'chatwoot')] + $required;
+    }
     $missing = [];
     foreach ($required as $field => $label) {
         if (empty($_POST[$field])) {
@@ -30,14 +63,48 @@ if (isset($_POST['update'])) {
             false,
             ERROR
         );
+    } elseif (!ChatwootConfig::isValidBaseUrl((string) $_POST['base_url'])) {
+        // Same validation ajax/test.php already applied — now also enforced
+        // on the actual save path, which previously forwarded an unvalidated
+        // base_url straight into a curl call carrying the API Access Token
+        // header (MEDIUM 4 of the 1.0.0 security review).
+        Session::addMessageAfterRedirect(
+            __('Invalid Chatwoot URL. Use the format https://your-chatwoot.com', 'chatwoot'),
+            false,
+            ERROR
+        );
     } else {
-        $input = $_POST;
+        // Explicit allow-list of this form's own fields — never the whole
+        // $_POST — so a stray or crafted request can't also overwrite
+        // dashboard_app_token, dashboard_app_id, website_token or hmac_token
+        // (LOW 7 of the 1.0.0 security review).
+        $input = [
+            'base_url'               => (string) $_POST['base_url'],
+            'account_id'             => (string) $_POST['account_id'],
+            'inbox_id'               => (string) $_POST['inbox_id'],
+            'enabled'                => !empty($_POST['enabled']) ? 1 : 0,
+            'widget_position'        => in_array($_POST['widget_position'] ?? '', ['left', 'right'], true) ? $_POST['widget_position'] : 'right',
+            'widget_type'            => in_array($_POST['widget_type'] ?? '', ['standard', 'expanded_bubble'], true) ? $_POST['widget_type'] : 'expanded_bubble',
+            'widget_launcher_title'  => (string) ($_POST['widget_launcher_title'] ?? ''),
+            'widget_dark_mode'       => in_array($_POST['widget_dark_mode'] ?? '', ['auto', 'light', 'dark'], true) ? $_POST['widget_dark_mode'] : 'auto',
+            'show_private_followups' => !empty($_POST['show_private_followups']) ? 1 : 0,
+            'restrict_entities'      => !empty($_POST['restrict_entities']) ? 1 : 0,
+        ];
+
+        // GLPI's own convention for stored secrets: a blank field means
+        // "leave the current value alone", never "clear it" — the template
+        // no longer re-emits the decrypted value, so this is the only way
+        // the administrator can keep it unchanged (LOW 8 of the 1.0.0
+        // security review).
+        if (trim((string) $_POST['api_key']) !== '') {
+            $input['api_key'] = (string) $_POST['api_key'];
+        }
 
         // Website Token and HMAC Token are no longer entered manually: they are
         // fetched directly from the Chatwoot API using Account ID + Inbox ID.
         $inbox = ChatwootConfig::fetchInboxDetails(
-            (string) $_POST['base_url'],
-            (string) $_POST['api_key'],
+            $input['base_url'],
+            trim((string) $_POST['api_key']) !== '' ? (string) $_POST['api_key'] : (string) ChatwootConfig::getConfig()['api_key'],
             (string) $_POST['account_id'],
             (string) $_POST['inbox_id']
         );
@@ -45,14 +112,12 @@ if (isset($_POST['update'])) {
         if ($inbox['ok']) {
             $input['website_token'] = $inbox['website_token'];
             $input['hmac_token']    = $inbox['hmac_token'];
-            $input['widget_script'] = $inbox['widget_script'];
             Session::addMessageAfterRedirect(
-                __('Configuration saved. Website Token and widget script automatically fetched from the Inbox.', 'chatwoot'),
+                __('Configuration saved. Website Token automatically fetched from the Inbox.', 'chatwoot'),
                 false,
                 INFO
             );
         } else {
-            unset($input['website_token'], $input['hmac_token'], $input['widget_script']);
             Session::addMessageAfterRedirect(
                 sprintf(
                     __('Configuration saved, but could not fetch the Inbox data: %s', 'chatwoot'),
@@ -68,7 +133,8 @@ if (isset($_POST['update'])) {
         ChatwootConfig::saveTargets(
             array_map('intval', $_POST['target_profiles'] ?? []),
             array_map('intval', $_POST['target_groups'] ?? []),
-            array_map('intval', $_POST['target_users'] ?? [])
+            array_map('intval', $_POST['target_users'] ?? []),
+            array_map('intval', $_POST['target_entities'] ?? [])
         );
 
         // Automatically registers the "GLPI" panel under Integrations >

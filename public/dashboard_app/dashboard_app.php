@@ -14,25 +14,30 @@ use GlpiPlugin\Chatwoot\Config as ChatwootConfig;
 
 header('Content-Type: text/html; charset=UTF-8');
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+header('X-Content-Type-Options: nosniff');
+// This page's own URL carries the integration token (`?t=`, the URL Chatwoot
+// registers for the iframe) — never forward it in a Referer header from the
+// panel's requests, images or links.
+header('Referrer-Policy: no-referrer');
 
 $token          = (string) ($_GET['t'] ?? '');
 $is_valid       = ChatwootConfig::isValidDashboardAppToken($token);
 $status_options = [];
-$en_dict        = [];
-$pt_dict        = [];
 $locale         = 'en';
+$chatwoot_origin = '';
+
+// Translations for this panel's own fixed labels live as plain JSON next
+// to this file (locales/en.json, locales/pt_BR.json) — kept separate
+// from GLPI's own gettext locales/ folder at the plugin root, since this
+// panel is a standalone page outside GLPI's template engine and doesn't
+// go through gettext at all. Loaded even with an invalid token, so the
+// error message itself comes from the dictionary.
+$en_json = @file_get_contents(__DIR__ . '/locales/en.json');
+$pt_json = @file_get_contents(__DIR__ . '/locales/pt_BR.json');
+$en_dict = $en_json !== false ? (json_decode($en_json, true) ?: []) : [];
+$pt_dict = $pt_json !== false ? (json_decode($pt_json, true) ?: []) : [];
 
 if ($is_valid) {
-    // Translations for this panel's own fixed labels live as plain JSON next
-    // to this file (locales/en.json, locales/pt_BR.json) — kept separate
-    // from GLPI's own gettext locales/ folder at the plugin root, since this
-    // panel is a standalone page outside GLPI's template engine and doesn't
-    // go through gettext at all.
-    $en_json = @file_get_contents(__DIR__ . '/locales/en.json');
-    $pt_json = @file_get_contents(__DIR__ . '/locales/pt_BR.json');
-    $en_dict = $en_json !== false ? (json_decode($en_json, true) ?: []) : [];
-    $pt_dict = $pt_json !== false ? (json_decode($pt_json, true) ?: []) : [];
-
     // Language is 100% automatic — driven only by the Chatwoot account's own
     // configured language (Config::getAccountLocale(), confirmed working via
     // GET /api/v1/accounts/{account_id}), never by GLPI's own language
@@ -42,6 +47,21 @@ if ($is_valid) {
     // for part of the page to end up in the "wrong" language after a switch.
     $config = ChatwootConfig::getConfig();
     $locale = ChatwootConfig::getAccountLocale($config) === 'pt_BR' ? 'pt_BR' : 'en';
+
+    // The origin the panel is allowed to exchange postMessage data with —
+    // rendered server-side so dashboard_app.js can reject any message that
+    // doesn't come from the configured Chatwoot instance itself (LOW 6 of
+    // the 1.0.0 review: the handler previously accepted messages from any
+    // origin at all).
+    $base_url_for_origin = (string) ($config['base_url'] ?? '');
+    $origin_parts         = parse_url($base_url_for_origin);
+    if (!empty($origin_parts['scheme']) && !empty($origin_parts['host'])) {
+        $chatwoot_origin = $origin_parts['scheme'] . '://' . $origin_parts['host']
+            . (!empty($origin_parts['port']) ? ':' . $origin_parts['port'] : '');
+
+        // Only Chatwoot's own origin may frame this panel.
+        header("Content-Security-Policy: frame-ancestors 'self' {$chatwoot_origin}");
+    }
 
     // Must run BEFORE ticketStatusOptions() below — that method calls GLPI's
     // own __(), which only picks up the language switched here if it already
@@ -64,22 +84,29 @@ $dicts_json = json_encode(
     JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP
 );
 
-// Cache-busting: forces the browser to fetch a fresh copy of the CSS/JS
-// whenever the plugin version changes, instead of possibly serving a stale
-// cached copy from before an update.
-$asset_version = defined('PLUGIN_CHATWOOT_VERSION') ? PLUGIN_CHATWOOT_VERSION : (string) time();
+// Cache-busting by CONTENT, not just by plugin version: the URL of each
+// asset changes whenever the file itself changes, so a browser (or proxy)
+// can never keep running an old dashboard_app.js against newer server-side
+// endpoints — which is exactly what happens if files are replaced without
+// a version bump.
+function chatwoot_dashboard_asset_version(string $relative_path): string
+{
+    $hash = @md5_file(__DIR__ . '/' . $relative_path);
+    $base = defined('PLUGIN_CHATWOOT_VERSION') ? PLUGIN_CHATWOOT_VERSION : '0';
+    return $hash !== false ? $base . '-' . substr($hash, 0, 10) : $base . '-' . time();
+}
 ?>
 <!DOCTYPE html>
 <html lang="<?php echo $locale === 'pt_BR' ? 'pt-BR' : 'en'; ?>">
 <head>
 <meta charset="UTF-8">
 <title>Tickets - GLPI</title>
-<link rel="stylesheet" href="css/dashboard_app.css?v=<?php echo urlencode($asset_version); ?>">
+<link rel="stylesheet" href="css/dashboard_app.css?v=<?php echo urlencode(chatwoot_dashboard_asset_version('css/dashboard_app.css')); ?>">
 </head>
-<body data-token="<?php echo htmlspecialchars($token, ENT_QUOTES); ?>" data-locale="<?php echo htmlspecialchars($locale, ENT_QUOTES); ?>">
+<body data-token="<?php echo htmlspecialchars($token, ENT_QUOTES); ?>" data-locale="<?php echo htmlspecialchars($locale, ENT_QUOTES); ?>" data-chatwoot-origin="<?php echo htmlspecialchars($chatwoot_origin, ENT_QUOTES); ?>">
 
 <?php if (!$is_valid): ?>
-<div class="cw-error" id="cw-invalid-token">Invalid or unconfigured integration token. Save the plugin configuration again under Setup &gt; Chatwoot.</div>
+<div class="cw-error" id="cw-invalid-token"><?php echo htmlspecialchars(chatwoot_dashboard_t($dict, 'invalid_token', 'Invalid or unconfigured integration token. Save the plugin configuration again under Setup > Chatwoot.')); ?></div>
 <?php else: ?>
 
 <div id="cw-list-view">
@@ -103,7 +130,7 @@ $asset_version = defined('PLUGIN_CHATWOOT_VERSION') ? PLUGIN_CHATWOOT_VERSION : 
 <div id="cw-detail-view" style="display:none;"></div>
 
 <script>window.__cwDictionaries = <?php echo $dicts_json; ?>;</script>
-<script src="js/dashboard_app.js?v=<?php echo urlencode($asset_version); ?>"></script>
+<script src="js/dashboard_app.js?v=<?php echo urlencode(chatwoot_dashboard_asset_version('js/dashboard_app.js')); ?>"></script>
 
 <?php endif; ?>
 </body>

@@ -1,6 +1,7 @@
 (function () {
     var body = document.body;
     var token = body.dataset.token || '';
+    var expectedOrigin = body.dataset.chatwootOrigin || '';
 
     var listViewEl = document.getElementById('cw-list-view');
     var detailViewEl = document.getElementById('cw-detail-view');
@@ -9,9 +10,113 @@
     var subtitleEl = document.getElementById('cw-subtitle');
     var searchEl = document.getElementById('cw-search');
     var statusEl = document.getElementById('cw-status');
-    var currentIdentifier = null;
-    var currentPhone = null;
+    var currentConversationId = null;
     var requestSeq = 0;
+
+    // --- Identity / capability --------------------------------------------
+    // The panel never tells the server WHO the contact is. It only sends the
+    // id of the Chatwoot conversation that is open; dashboard_identify.php
+    // asks the Chatwoot API who that conversation's contact is and runs the
+    // usual GLPI lookup (login first, then phone), returning a short-lived
+    // capability. That capability — as a request header, never a URL
+    // parameter — then authorizes the ticket list and detail calls (HIGH 1
+    // of the 1.0.0 security review).
+    var capability = null;
+    var capabilityExpiresAt = 0;
+    var identifyInFlight = null;
+    var identifyError = '';
+    // Bumped every time the agent switches to another contact. An identify()
+    // call that started for the previous contact must never store its
+    // capability once the switch happened, or the panel would keep showing
+    // the previous person's tickets until that capability expired.
+    var identityGeneration = 0;
+
+    function resetIdentity() {
+        identityGeneration++;
+        capability = null;
+        capabilityExpiresAt = 0;
+        identifyInFlight = null;
+    }
+
+    function identify() {
+        if (!currentConversationId) {
+            return Promise.resolve(false);
+        }
+        if (identifyInFlight) {
+            return identifyInFlight;
+        }
+
+        var generation = identityGeneration;
+        var params = new URLSearchParams();
+        params.set('conversation_id', currentConversationId);
+
+        identifyInFlight = fetch('/plugins/chatwoot/dashboard_app/dashboard_identify.php', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'X-Chatwoot-Panel-Token': token
+            },
+            body: params.toString()
+        })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (generation !== identityGeneration) {
+                    return false; // the agent already moved to another contact
+                }
+                identifyInFlight = null;
+                identifyError = (data && data.error) || '';
+                if (!data || !data.found) {
+                    capability = null;
+                    capabilityExpiresAt = 0;
+                    return false;
+                }
+                capability = data.capability;
+                // Refresh a little before actual expiry so a request never
+                // races the capability's own TTL.
+                capabilityExpiresAt = Date.now() + Math.max(0, ((data.expires_in || 300) - 20)) * 1000;
+                if (data.user_name) subtitleEl.textContent = data.user_name;
+                return true;
+            })
+            .catch(function () {
+                if (generation !== identityGeneration) {
+                    return false;
+                }
+                identifyInFlight = null;
+                identifyError = 'chatwoot_unreachable';
+                capability = null;
+                capabilityExpiresAt = 0;
+                return false;
+            });
+
+        return identifyInFlight;
+    }
+
+    function withCapability() {
+        if (capability && Date.now() < capabilityExpiresAt) {
+            return Promise.resolve(true);
+        }
+        return identify();
+    }
+
+    function authHeaders() {
+        return {
+            'X-Chatwoot-Panel-Token': token,
+            'X-Chatwoot-Capability': capability || ''
+        };
+    }
+
+    // fetch() with the auth headers, plus one automatic retry if the server
+    // says the capability is no longer valid (401) — e.g. it expired on the
+    // server a moment before the browser's own refresh margin kicked in.
+    function authedFetch(url) {
+        var send = function () { return fetch(url, { headers: authHeaders() }); };
+        return send().then(function (r) {
+            if (r.status !== 401) return r;
+            capability = null;
+            capabilityExpiresAt = 0;
+            return identify().then(function (ok) { return ok ? send() : r; });
+        });
+    }
 
     // --- i18n -----------------------------------------------------------
     // Language is 100% automatic, driven only by the Chatwoot account's own
@@ -43,32 +148,20 @@
         return div.innerHTML;
     }
 
-    // Recursively looks for any of the given keys at any level of the object
-    // received from Chatwoot — avoids relying on one fixed exact path, since
-    // the exact payload structure can vary.
-    function findValueByKeys(obj, keys, depth) {
-        depth = depth || 0;
-        if (depth > 6 || !obj || typeof obj !== 'object') return null;
-        for (var i = 0; i < keys.length; i++) {
-            if (typeof obj[keys[i]] === 'string' && obj[keys[i]]) return obj[keys[i]];
+    // Chatwoot's Dashboard App message: { event: 'appContext', data: {
+    // conversation: { id, ... }, contact: { ... }, currentAgent: { ... } } }.
+    // Only the conversation id is used for authorization; the contact's name
+    // is just shown while the server resolves who it is.
+    function appContext(msg) {
+        if (msg && msg.event === 'appContext' && msg.data && typeof msg.data === 'object') {
+            return msg.data;
         }
-        for (var key in obj) {
-            if (!Object.prototype.hasOwnProperty.call(obj, key)) continue;
-            var val = obj[key];
-            if (val && typeof val === 'object') {
-                var found = findValueByKeys(val, keys, depth + 1);
-                if (found) return found;
-            }
-        }
-        return null;
+        return msg && msg.conversation ? msg : null;
     }
 
-    function findIdentifier(obj) {
-        return findValueByKeys(obj, ['identifier']);
-    }
-
-    function findPhone(obj) {
-        return findValueByKeys(obj, ['phone_number', 'phoneNumber', 'phone']);
+    function conversationIdOf(ctx) {
+        var id = ctx && ctx.conversation ? ctx.conversation.id : null;
+        return /^[1-9][0-9]*$/.test(String(id == null ? '' : id)) ? String(id) : null;
     }
 
     function statusBadge(ticket) {
@@ -127,35 +220,41 @@
     // Always searches directly in GLPI (doesn't filter a pre-loaded list), so
     // it finds any ticket of the person, not just the most recent ones.
     function fetchTickets() {
-        if (!currentIdentifier && !currentPhone) return;
+        if (!currentConversationId) return;
 
         var seq = ++requestSeq;
-        var params = new URLSearchParams();
-        params.set('t', token);
-        params.set('identifier', currentIdentifier || '');
-        params.set('phone', currentPhone || '');
-        params.set('q', searchEl.value.trim());
-        params.set('status', statusEl.value);
-        params.set('lang', currentLocale);
-
         listEl.innerHTML = '<div class="cw-empty">' + esc(t('loading')) + '</div>';
         countEl.style.display = 'none';
 
-        fetch('/plugins/chatwoot/dashboard_app/dashboard_tickets.php?' + params.toString())
-            .then(function (r) { return r.json(); })
-            .then(function (data) {
-                if (seq !== requestSeq) return; // stale response, ignore
-                if (!data.user_found) {
-                    listEl.innerHTML = '<div class="cw-empty">' + esc(t('user_not_found')) + '</div>';
-                    return;
-                }
-                subtitleEl.textContent = data.user_name || currentIdentifier;
-                renderTickets(data.tickets || []);
-            })
-            .catch(function () {
-                if (seq !== requestSeq) return;
-                listEl.innerHTML = '<div class="cw-error">' + esc(t('error_fetch')) + '</div>';
-            });
+        withCapability().then(function (ok) {
+            if (seq !== requestSeq) return;
+            if (!ok) {
+                listEl.innerHTML = identifyError === 'chatwoot_unreachable'
+                    ? '<div class="cw-error">' + esc(t('error_fetch')) + '</div>'
+                    : '<div class="cw-empty">' + esc(t('user_not_found')) + '</div>';
+                return;
+            }
+
+            var params = new URLSearchParams();
+            params.set('q', searchEl.value.trim());
+            params.set('status', statusEl.value);
+            params.set('lang', currentLocale);
+
+            authedFetch('/plugins/chatwoot/dashboard_app/dashboard_tickets.php?' + params.toString())
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    if (seq !== requestSeq) return; // stale response, ignore
+                    if (!data.user_found) {
+                        listEl.innerHTML = '<div class="cw-empty">' + esc(t('user_not_found')) + '</div>';
+                        return;
+                    }
+                    renderTickets(data.tickets || []);
+                })
+                .catch(function () {
+                    if (seq !== requestSeq) return;
+                    listEl.innerHTML = '<div class="cw-error">' + esc(t('error_fetch')) + '</div>';
+                });
+        });
     }
 
     function backButtonHtml() {
@@ -163,31 +262,37 @@
     }
 
     function showDetail(ticketId) {
+
         listViewEl.style.display = 'none';
         detailViewEl.style.display = 'block';
         detailViewEl.innerHTML = '<div class="cw-empty">' + esc(t('loading')) + '</div>';
 
-        var params = new URLSearchParams();
-        params.set('t', token);
-        params.set('identifier', currentIdentifier || '');
-        params.set('phone', currentPhone || '');
-        params.set('ticket_id', ticketId);
-        params.set('lang', currentLocale);
-
-        fetch('/plugins/chatwoot/dashboard_app/dashboard_ticket_detail.php?' + params.toString())
-            .then(function (r) { return r.json(); })
-            .then(function (data) {
-                if (!data.found) {
-                    detailViewEl.innerHTML = backButtonHtml() + '<div class="cw-error">' + esc(t('could_not_load')) + '</div>';
-                    bindBack();
-                    return;
-                }
-                renderDetail(data.ticket);
-            })
-            .catch(function () {
-                detailViewEl.innerHTML = backButtonHtml() + '<div class="cw-error">' + esc(t('error_loading')) + '</div>';
+        withCapability().then(function (ok) {
+            if (!ok) {
+                detailViewEl.innerHTML = backButtonHtml() + '<div class="cw-error">' + esc(t('could_not_load')) + '</div>';
                 bindBack();
-            });
+                return;
+            }
+
+            var params = new URLSearchParams();
+            params.set('ticket_id', ticketId);
+            params.set('lang', currentLocale);
+
+            authedFetch('/plugins/chatwoot/dashboard_app/dashboard_ticket_detail.php?' + params.toString())
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    if (!data.found) {
+                        detailViewEl.innerHTML = backButtonHtml() + '<div class="cw-error">' + esc(t('could_not_load')) + '</div>';
+                        bindBack();
+                        return;
+                    }
+                    renderDetail(data.ticket);
+                })
+                .catch(function () {
+                    detailViewEl.innerHTML = backButtonHtml() + '<div class="cw-error">' + esc(t('error_loading')) + '</div>';
+                    bindBack();
+                });
+        });
     }
 
     function renderDetail(ticket) {
@@ -217,7 +322,8 @@
         descEl.textContent = ticket.description || t('no_description');
         detailViewEl.appendChild(descEl);
 
-        var descImages = imageGallery(ticket.description_images, ticket.id);
+        docLinks = ticket.doc_links || {};
+        var descImages = imageGallery(ticket.description_images);
         if (descImages) detailViewEl.appendChild(descImages);
 
         renderTimeline(ticket.timeline || [], ticket.id);
@@ -227,39 +333,49 @@
         link.className = 'cw-external';
         link.href = ticket.url;
         link.target = '_blank';
-        link.rel = 'noopener';
+        // noreferrer (not just noopener) — noopener alone still leaks this
+        // page's URL via the Referer header on same-origin navigations
+        // (MEDIUM 3 of the 1.0.0 security review).
+        link.rel = 'noreferrer noopener';
         link.innerHTML = esc(t('open_in_glpi')) + ' &#8599;';
         detailViewEl.appendChild(link);
 
         bindBack();
     }
 
-    // Builds the document proxy URL (embedded image or attachment). The
-    // server confirms again, on every call, that this document really
-    // belongs to this ticket before serving any byte.
-    function docUrl(ticketId, docId) {
-        var params = new URLSearchParams();
-        params.set('t', token);
-        params.set('identifier', currentIdentifier || '');
-        params.set('phone', currentPhone || '');
-        params.set('ticket_id', ticketId);
-        params.set('doc', docId);
-        return '/plugins/chatwoot/dashboard_app/dashboard_document.php?' + params.toString();
+    // Every document shown in a ticket (embedded images and attachments)
+    // comes with its own short-lived link in ticket.doc_links, minted by the
+    // server when the detail was loaded (Config::mintDocumentLink()): bound
+    // to this user, this ticket and this document only. So plain
+    // <img src>/<a target="_blank"> links work — the file opens top-level
+    // with the server's own Content-Disposition/nosniff headers, never as a
+    // blob: URL (which would run under this page's GLPI origin and lose the
+    // server's `attachment` disposition).
+    var docLinks = {};
+
+    function docLink(id) {
+        return docLinks[String(id)] || '';
     }
 
-    function imageGallery(ids, ticketId) {
+    function imageGallery(ids) {
         if (!ids || !ids.length) return null;
         var wrap = document.createElement('div');
         wrap.className = 'cw-image-gallery';
         ids.forEach(function (id) {
+            var href = docLink(id);
+            if (!href) return;
+            var a = document.createElement('a');
+            a.href = href;
+            a.target = '_blank';
+            a.rel = 'noreferrer noopener';
             var img = document.createElement('img');
             img.className = 'cw-image-thumb';
             img.loading = 'lazy';
-            img.src = docUrl(ticketId, id);
-            img.addEventListener('click', function () { window.open(img.src, '_blank'); });
-            wrap.appendChild(img);
+            img.src = href;
+            a.appendChild(img);
+            wrap.appendChild(a);
         });
-        return wrap;
+        return wrap.childNodes.length ? wrap : null;
     }
 
     function renderTimeline(items, ticketId) {
@@ -337,8 +453,14 @@
             box.appendChild(head);
             box.appendChild(body2);
 
-            var imgs = imageGallery(item.images, ticketId);
+            var imgs = imageGallery(item.images);
             if (imgs) box.appendChild(imgs);
+
+            // Files attached to this specific follow-up/solution, right under
+            // it — same place GLPI's own timeline shows them.
+            (item.attachments || []).forEach(function (f) {
+                box.appendChild(attachmentRow(f));
+            });
 
             detailViewEl.appendChild(box);
         });
@@ -360,29 +482,33 @@
         }
 
         files.forEach(function (f) {
-            var row = document.createElement('div');
-            row.className = 'cw-attachment';
-
-            var icon = document.createElement('span');
-            icon.innerHTML = '&#128206;';
-            row.appendChild(icon);
-
-            var name = document.createElement('a');
-            name.className = 'cw-attachment-link';
-            name.href = docUrl(ticketId, f.id);
-            name.target = '_blank';
-            name.rel = 'noopener';
-            name.textContent = f.name;
-            row.appendChild(name);
-
-            if (f.size) {
-                var size = document.createElement('small');
-                size.textContent = f.size;
-                row.appendChild(size);
-            }
-
-            detailViewEl.appendChild(row);
+            detailViewEl.appendChild(attachmentRow(f));
         });
+    }
+
+    function attachmentRow(f) {
+        var row = document.createElement('div');
+        row.className = 'cw-attachment';
+
+        var icon = document.createElement('span');
+        icon.innerHTML = '&#128206;';
+        row.appendChild(icon);
+
+        var name = document.createElement('a');
+        name.className = 'cw-attachment-link';
+        name.href = docLink(f.id) || '#';
+        name.target = '_blank';
+        name.rel = 'noreferrer noopener';
+        name.textContent = f.name;
+        row.appendChild(name);
+
+        if (f.size) {
+            var size = document.createElement('small');
+            size.textContent = f.size;
+            row.appendChild(size);
+        }
+
+        return row;
     }
 
     function bindBack() {
@@ -400,6 +526,14 @@
     statusEl.addEventListener('change', fetchTickets);
 
     window.addEventListener('message', function (event) {
+        // Only Chatwoot's own configured origin may drive this panel (LOW 6
+        // of the 1.0.0 security review). Even a forged message could only
+        // point the panel at another real conversation of this Chatwoot
+        // account: the contact is always resolved server-side.
+        if (expectedOrigin && event.origin !== expectedOrigin) {
+            return;
+        }
+
         var data = event.data;
         if (typeof data === 'string') {
             try { data = JSON.parse(data); } catch (e) { return; }
@@ -408,22 +542,29 @@
 
         window.__cwLastPayload = data;
 
-        var identifier = findIdentifier(data);
-        // Chatwoot sends several messages throughout the conversation (new
-        // message, status change, etc.), and the identifier shows up in
-        // practically all of them. Without this check, every single one
-        // would reload the whole list and overwrite whatever was in the
-        // search/filter.
-        if (identifier && identifier !== currentIdentifier) {
-            currentIdentifier = identifier;
-            currentPhone = findPhone(data) || currentPhone;
-            subtitleEl.textContent = identifier;
+        var ctx = appContext(data);
+        var conversationId = conversationIdOf(ctx);
+        // Chatwoot sends several messages throughout a conversation (new
+        // message, status change, etc.). Only switching to ANOTHER
+        // conversation reloads the list — otherwise every message would wipe
+        // the agent's search/filter. Contacts with only a phone number
+        // (WhatsApp) work the same as contacts with an identifier.
+        if (conversationId && conversationId !== currentConversationId) {
+            currentConversationId = conversationId;
+            resetIdentity();
+            identifyError = '';
+            subtitleEl.textContent = (ctx.contact && ctx.contact.name) || '';
             searchEl.disabled = false;
             statusEl.disabled = false;
+            listViewEl.style.display = 'block';
+            detailViewEl.style.display = 'none';
             fetchTickets();
         }
     });
 
-    // Asks Chatwoot to send the current conversation/contact data.
-    window.parent.postMessage('chatwoot-dashboard-app:fetch-info', '*');
+    // Asks Chatwoot to send the current conversation/contact data — posted
+    // only to the configured Chatwoot origin once known, falling back to
+    // '*' only while that origin hasn't been resolved yet (e.g. a
+    // just-installed site with no base_url saved).
+    window.parent.postMessage('chatwoot-dashboard-app:fetch-info', expectedOrigin || '*');
 })();
