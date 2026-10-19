@@ -328,6 +328,8 @@ to throttle identity lookups).
 
 ## ☕ Support the project
 
+<div align="center">
+
 **Enjoying the plugin?** It's an independent, open-source project, built and maintained with care
 so that GLPI and Chatwoot teams can work together without switching screens. If it saves your team
 time, you can buy me a coffee: it helps keep the plugin up to date with new GLPI and Chatwoot
@@ -369,6 +371,8 @@ um PR ajudam tanto quanto.
 </td>
 </tr>
 </table>
+
+</div>
 
 ## 📄 License
 
