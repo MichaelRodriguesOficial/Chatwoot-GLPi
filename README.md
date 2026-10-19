@@ -1,324 +1,359 @@
 <p align="center">
-  <img src="logo.png" alt="Chatwoot" width="96">
+  <img src="logo.png" alt="Chatwoot" width="110">
 </p>
 
 <h1 align="center">Chatwoot for GLPI</h1>
 
 <p align="center">
-  A live chat widget inside GLPI, and a ticket panel inside Chatwoot — so support agents and
-  requesters never have to leave the tool they're already in.
+  <b>A live chat widget inside GLPI, and a ticket panel inside Chatwoot.</b><br>
+  Requesters chat without leaving GLPI. Agents see the requester's tickets without leaving the conversation.
 </p>
 
 <p align="center">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPLv3%2B-blue" alt="License"></a>
+  <a href="https://github.com/MichaelRodriguesOficial/Chatwoot-GLPi/releases/latest"><img src="https://img.shields.io/github/v/release/MichaelRodriguesOficial/Chatwoot-GLPi?label=release&color=1f93ff" alt="Latest release"></a>
+  <a href="https://github.com/MichaelRodriguesOficial/Chatwoot-GLPi/actions/workflows/ci.yml"><img src="https://github.com/MichaelRodriguesOficial/Chatwoot-GLPi/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <img src="https://img.shields.io/badge/GLPI-11.x-2c9e6f" alt="GLPI 11.x">
   <img src="https://img.shields.io/badge/PHP-8.1%2B-777bb4" alt="PHP 8.1+">
   <img src="https://img.shields.io/badge/i18n-en__GB%20%C2%B7%20en__US%20%C2%B7%20pt__BR-informational" alt="Languages">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPLv3%2B-blue" alt="License"></a>
+</p>
+
+<p align="center">
+  <a href="#installation">Installation</a> ·
+  <a href="#configuration">Configuration</a> ·
+  <a href="#security">Security</a> ·
+  <a href="#troubleshooting">Troubleshooting</a> ·
+  <a href="CHANGELOG.md">Changelog</a> ·
+  <a href="#support">Support ☕</a>
 </p>
 
 ---
 
-Full integration of [Chatwoot](https://www.chatwoot.com/) with [GLPI](https://glpi-project.org/)
-11.x: a chat widget on authenticated pages, automatic user identification, and a panel inside
-Chatwoot itself showing the tickets of the person you're chatting with — no need to switch screens.
+## ✨ Highlights
 
-## Screenshots
+<table>
+<tr>
+<td width="50%" valign="top">
 
-**In GLPI** — the widget appears on every authenticated page, ready to chat.
+### 💬 Chat inside GLPI
+The official Chatwoot widget on every authenticated GLPI page, with the user **already identified**
+(name, email, phone, photo, city/country) and verified with HMAC. You only type the URL, a token
+and two IDs; the Website Token and HMAC Token are fetched for you and kept in sync every hour.
+
+</td>
+<td width="50%" valign="top">
+
+### 🎫 Tickets inside Chatwoot
+A **"GLPI" tab** next to the conversation, registered automatically. It lists the requester's
+tickets with search, status filter and SLA bar, and opens the full detail (timeline, solution,
+images, attachments) without leaving Chatwoot. It works for **website widget and WhatsApp**
+conversations alike.
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
+### 🔒 Secure by design
+Reviewed by the GLPI team before publication. Secrets are encrypted with GLPI's own key, the
+contact is resolved **server-side from Chatwoot**, links are short-lived and signed, and the
+security logic is covered by tests in CI.
+
+</td>
+<td width="50%" valign="top">
+
+### 🎛️ You decide who sees what
+Show the widget only to some profiles, groups or users. Keep technicians' internal notes out of
+Chatwoot (default) or opt in. Optionally restrict the panel to chosen entities.
+
+</td>
+</tr>
+</table>
+
+## 📸 Screenshots
+
+**In GLPI**: the widget appears on every authenticated page, ready to chat.
 
 | Widget bubble on the GLPI portal | Conversation open, message sent and answered |
 |---|---|
 | ![Widget bubble](screenshots/widget-bubble.png) | ![Widget chat open](screenshots/widget-chat.png) |
 
-**Configuration** — Setup > General > Chatwoot, no manual token copy/pasting.
-
-| Connection settings | Customization, permissions, and the panel auto-registered in Chatwoot |
-|---|---|
-| ![Connection settings](screenshots/config-connection.png) | ![Customization settings](screenshots/config-customization.png) |
-
-**Inside Chatwoot** — the "GLPI" tab, right next to "Messages".
+**Inside Chatwoot**: the "GLPI" tab, right next to "Messages".
 
 | Requester's ticket list | Full ticket detail, without leaving the conversation |
 |---|---|
 | ![Ticket list panel](screenshots/panel-list.png) | ![Ticket detail panel](screenshots/panel-detail.png) |
 
-## Table of contents
+**Configuration**: Setup > General > Chatwoot, no manual token copy/pasting.
 
-- [What the plugin does](#what-the-plugin-does)
-- [Languages](#languages)
-- [Requirements](#requirements)
-- [Installation](#installation)
-- [Configuration](#configuration)
-- [The "GLPI" panel inside Chatwoot](#the-glpi-panel-inside-chatwoot)
-- [Security](#security)
-- [Architecture and file structure](#architecture-and-file-structure)
-- [Development and tests](#development-and-tests)
-- [License](#license)
+| Connection settings | Customization, permissions and panel security |
+|---|---|
+| ![Connection settings](screenshots/config-connection.png) | ![Customization settings](screenshots/config-customization.png) |
 
-## What the plugin does
+## 🧭 How it works
 
-### 💬 Chatwoot widget in GLPI
+```mermaid
+sequenceDiagram
+    autonumber
+    actor R as Requester (in GLPI)
+    participant CW as Chatwoot
+    actor A as Agent
+    participant Tab as "GLPI" tab
+    participant P as GLPI plugin
+    R->>CW: Chats through the widget (identifier = GLPI login)
+    Note over CW: ...or the contact writes on WhatsApp (phone number)
+    A->>Tab: Opens the conversation and the "GLPI" tab
+    Tab->>P: Conversation id only
+    P->>CW: Who is this conversation's contact? (Chatwoot API)
+    CW-->>P: identifier + phone number
+    P->>P: Finds the GLPI user: login first, then phone
+    P-->>Tab: That person's tickets, detail and attachments
+```
 
-- Injects the official Chatwoot widget into every authenticated GLPI page.
-- **Minimal configuration**: only asks for the Chatwoot URL, API Access Token, Account ID, and Inbox
-  ID — the **Website Token and HMAC Token are fetched automatically** from the Chatwoot API, no
-  copy/pasting needed.
-- **Official SDK loader**: the widget is loaded with Chatwoot's documented `sdk.js` loader
-  (`<script src>` from your Chatwoot URL) — the plugin never executes JavaScript returned by the
-  Chatwoot API, so the widget stays subject to your Content-Security-Policy.
-- **Automatic sync**: an automatic action (GLPI Automatic actions) runs hourly fetching the latest
-  Website Token/HMAC Token — if a token gets regenerated or the Inbox recreated on
-  Chatwoot's side, the widget doesn't stay broken waiting for someone to notice and save manually.
-  The **Test connection** button runs the same sync on the spot.
-- Customization: position (left/right), bubble type (standard/expanded), launcher title, and dark
-  mode (automatic based on the system / always light / always dark).
+1. A logged-in GLPI user opens the widget. The plugin identifies them to Chatwoot with their GLPI
+   login as `identifier` (HMAC-verified), plus name, email, phone and photo.
+2. An agent opens the conversation in Chatwoot, whether it came from the widget or from WhatsApp, and
+   clicks the **GLPI** tab.
+3. The tab sends GLPI only the **conversation id**. GLPI asks the Chatwoot API who that conversation's
+   contact is, then looks the person up by **login** first and **phone number** second (Phone,
+   Mobile phone and Phone 2, comparing digits only).
+4. The agent sees that person's tickets and can open any of them, with attachments, right there.
 
-### 🪪 User identification
+<a id="installation"></a>
 
-- Calls `$chatwoot.setUser()` with the logged-in GLPI user's name, email, phone (normalized to the
-  format Chatwoot expects), and profile photo.
-- **`identifier_hash`** (Identity Validation / HMAC): uses the Inbox's HMAC Token to prove to
-  Chatwoot the identity wasn't forged — makes the "identity not verified" warning go away.
-- **Identifier = GLPI username** (login), not an artificial value — makes it easy to recognize the
-  contact in Chatwoot.
-- **City and country**: fetched from the user's Location → Entity (with fallback), and synced via
-  the Chatwoot REST API right after `setUser()` — works around a known Chatwoot SDK bug where these
-  fields sometimes don't persist on the contact record when sent only through `setUser()`.
-- **Profile photo**: served by its own proxy protected by a signed token (Chatwoot's dashboard runs
-  on their domain, without a GLPI session, so a regular URL wouldn't work).
+## 📦 Installation
 
-### 🔒 Visibility permissions
-
-- Choose **which Profiles, Groups, and/or Users** can see the widget. Leaving everything blank, the
-  widget shows up for every authenticated user (default).
-- Self-contained search pickers (first 10 results + filter by name as you type), no external
-  libraries required.
-
-### 🎫 "GLPI" panel inside Chatwoot (Dashboard App)
-
-- **Automatically registered** under Integrations > Dashboard Apps in Chatwoot when the
-  configuration is saved — no need to set it up manually.
-- Shows the **tickets of the person identified in the conversation** (as requester): search by
-  title/number (directly in GLPI, not just what's already loaded), status filter, assigned
-  technician, location, and an **SLA progress bar** based on GLPI's real deadline (`time_to_resolve`).
-- Clicking a ticket shows the **full detail inside the panel itself** (without leaving Chatwoot):
-  status, priority, technician, location, description (with embedded images shown as thumbnails),
-  the **full timeline** (follow-ups from both sides + solution, with the channel — walk-in/email/etc
-  — and internal notes flagged), and the list of **downloadable attachments**. A "← Back" button
-  returns to the list, and "Open in GLPI ↗" opens the full page in a new tab.
-- **Who the person is comes from Chatwoot itself**: the panel only tells GLPI which conversation is
-  open, and GLPI fetches that conversation's contact through the Chatwoot API. It then looks for the
-  GLPI user by the contact's **identifier** (the GLPI login, set by this plugin's widget) and, if
-  there's none or it doesn't match, by **phone** (checking Phone, Mobile phone, and Phone 2,
-  normalizing both sides to compare only the digits) — so both the GLPI widget and WhatsApp
-  conversations are covered.
-
-## Languages
+**Requirements**
 
 | | |
 |---|---|
-| **Configuration screen** | GLPI's standard gettext (`locales/*.po`/`*.mo`) — **en_GB**, **en_US**, and **pt_BR** included. Follows each GLPI account's own configured language automatically. |
-| **"GLPI" panel inside Chatwoot** | Its own plain JSON translations (`public/dashboard_app/locales/`) — **en** and **pt_BR**. 100% automatic, driven by the **Chatwoot account's** configured language, never GLPI's. |
-
-The panel's language even applies to values that come from GLPI itself (ticket status, priority,
-solution status) — the panel tells GLPI which language to answer in, for that one request only,
-without touching anyone's real session.
-
-<details>
-<summary>How the panel's language detection works, and how to add another language</summary>
-
-**Detection**: `Config::getAccountLocale()` fetches the account's language server-side via
-`GET /api/v1/accounts/{account_id}` (confirmed response shape:
-`{"locale": "en", "id": 2, "name": "...", ...}`), and `dashboard_app.php` renders the whole page in
-that language from the very first byte — nothing swaps client-side after load. This is account-wide
-(shared by everyone in the account), not a specific agent's own preference, since there's no
-reliable, documented way to read an individual agent's language from inside the panel. Falls back to
-English if the account's language can't be determined.
-
-**GLPI-sourced values** (ticket status/priority/solution labels) follow along too: the panel sends
-`lang=en`/`lang=pt_BR` with every request to `dashboard_tickets.php` and `dashboard_ticket_detail.php`,
-which call `Config::applyRequestLanguage()` — a thin wrapper around GLPI's own
-`Session::loadLanguage()` that switches gettext for that single request only. These public endpoints
-never had an authenticated session to begin with, so nothing leaks into anyone's normal GLPI usage.
-
-**Adding a language to the configuration screen** (gettext): copy `locales/chatwoot.pot` to
-`locales/{code}.po` (e.g. `es_ES.po`), translate the `msgstr` entries, compile with
-`msgfmt {code}.po -o {code}.mo`.
-
-**Adding a language to the panel** (JSON): add a file under `public/dashboard_app/locales/` (e.g.
-`es.json`) with the same keys as `en.json`; read it in `dashboard_app.php` and add it to the
-`$dicts_json` array; add the matching case to the language checks in `dashboard_app.js` (today
-hardcoded to just `en`/`pt_BR`).
-
-</details>
-
-## Requirements
-
-| | |
-|---|---|
-| **GLPI** | 11.x only — see note below |
+| **GLPI** | 11.x ([why not 10.x?](#troubleshooting)) |
 | **PHP** | 8.1+ |
-| **Chatwoot** | Self-hosted or cloud, with a Website-type Inbox configured |
-| **Chatwoot API Access Token** | From an **administrator** (or an agent who is a member of every Inbox where the "GLPI" panel is used — e.g. the website widget *and* WhatsApp). Agent profile > Profile settings > Access Token |
+| **Chatwoot** | Self-hosted or cloud, with a Website inbox |
+| **API Access Token** | From a Chatwoot **administrator** (or an agent who belongs to every inbox where the GLPI tab is used, e.g. website *and* WhatsApp) |
 
-> **Why GLPI 11 only?** Earlier development versions attempted GLPI 10.x support, but GLPI 10 uses a
-> fundamentally different bootstrap/routing model (e.g. requires `inc/includes.php` in every script,
-> has no `public/` asset convention, and has no equivalent of the `Firewall`/`SessionManager` APIs
-> the Dashboard App panel depends on to work without a login session). Supporting both would mean
-> maintaining two different plugin architectures in parallel, so this plugin officially targets GLPI
-> 11.x only — `plugin_chatwoot_check_prerequisites()` blocks installation on older versions instead
-> of failing partway through.
+**Steps**
 
-## Installation
-
-1. Copy the `chatwoot/` folder into `marketplace/` (or `plugins/`) at the root of your GLPI
-   installation.
-2. Under **Setup > Plugins**, install and enable the "Chatwoot" plugin.
-3. Go to **Setup > General > Chatwoot**.
-
-## Configuration
-
-Fill in:
-
-| Field | Required | Where to find it in Chatwoot |
-|---|---|---|
-| Chatwoot URL | Yes | Your instance's address (e.g. `https://chat.yourcompany.com`) |
-| API Access Token | Yes | Agent profile > Profile settings > Access Token — preferably an **administrator's**, since the panel reads each conversation through it |
-| Account ID | Yes | Chatwoot dashboard URL (`/app/accounts/{id}/...`) |
-| Inbox ID | Yes | Inbox settings in Chatwoot |
-
-Website Token and HMAC Token **don't need to be typed in** — they're fetched automatically when
-saving, based on the Account ID and Inbox ID. Use the **Test connection** button to validate
-everything before saving.
-
-Then adjust **Widget customization** and, if you want to restrict who sees the widget, configure
-**Permissions**.
-
-## The "GLPI" panel inside Chatwoot
-
-After successfully saving the configuration for the first time, open any conversation in Chatwoot —
-a **"GLPI"** tab should appear next to "Conversation". If it doesn't show up, check under
-Integrations > Dashboard Apps whether "GLPI" was created; if not, save the configuration again.
-
-## Security
-
-This section was revised after an independent pre-publication security review of 1.0.0 (see
-[`CHANGELOG.md`](CHANGELOG.md) for the full list of fixes in 1.0.1).
-
-- **API Access Token, HMAC Token, and the Dashboard App integration token** are encrypted with
-  GLPI's own `GLPIKey` class (the same one used for LDAP/SMTP passwords) and automatically
-  re-encrypted whenever the administrator runs `php bin/console security:change_key` (registered via
-  `Hooks::SECURED_FIELDS`). None of them is ever sent to the browser — the config screen's API
-  Access Token field is always rendered blank; leaving it blank on save keeps the stored value.
-- The panel inside Chatwoot (profile photo, ticket list, detail, attachments) runs in an iframe on
-  Chatwoot's domain, where the GLPI session cookie is normally not sent (modern browsers block
-  third-party cookies in iframes). That's why these endpoints are public
-  (`Firewall::STRATEGY_NO_CHECK` + `SessionManager::registerPluginStatelessPath`), but every one of
-  them is protected by the automatically generated integration token **and** a short-lived
-  capability (minted by `dashboard_identify.php`, valid for 5 minutes, bound to a single GLPI user
-  id and to the Chatwoot conversation). The browser never says *who* the contact is: it only sends
-  the id of the open conversation, and the server fetches that conversation's contact through the
-  Chatwoot API before looking the person up in GLPI — so even a leaked integration token can't be
-  used to read the tickets of an arbitrary GLPI user, only of people who actually have a
-  conversation in that Chatwoot account. Neither the integration token nor the capability is ever carried in a URL —
-  both travel as request headers, and the panel page sends `Referrer-Policy: no-referrer`.
-  Attachments and embedded images use per-document links instead, minted when a ticket is opened:
-  each one is bound to that user, that ticket and that single document, and expires after 10
-  minutes (like a pre-signed URL). Private/internal follow-ups are only exposed
-  if an administrator explicitly opts in (off by default), and the panel can optionally be restricted
-  to a chosen set of entities (sub-entities included). The integration token can be regenerated on
-  demand from the configuration screen if it's ever suspected to have leaked. Identity resolution
-  (`dashboard_identify.php`) is throttled per IP address and logged.
-- Only active, non-deleted GLPI accounts can be resolved through the panel.
-- Ticket descriptions and messages are converted from HTML to plain text on the server and inserted
-  via `textContent` in the browser (never `innerHTML`), avoiding any risk of reproducing HTML/script
-  from old content.
-- Attachment and embedded image downloads go through a proxy that validates the document's ownership
-  (directly on the ticket, or linked to one of its follow-ups/solution) before serving any byte, and
-  are always served with the same inline allow-list GLPI core itself applies in
-  `Toolbox::getFileAsResponse()` (images except SVG, and PDF); everything else is forced to
-  `attachment`, always with `X-Content-Type-Options: nosniff` and a CSP sandbox — never `inline`
-  for an arbitrary, attacker-controlled mime type. The file path is re-resolved with `realpath()`
-  and must stay inside GLPI's document folder.
-- The Chatwoot widget loader on GLPI's own pages never executes code returned by the Chatwoot API —
-  only the documented, static `sdk.js` loader is used, so it stays subject to your Content-Security-Policy.
-- Outbound requests to the Chatwoot API never follow redirects while carrying the API Access Token,
-  and are restricted to `http`/`https`.
-
-## Architecture and file structure
+1. Download `chatwoot-x.y.z.zip` from the [latest release](https://github.com/MichaelRodriguesOficial/Chatwoot-GLPi/releases/latest).
+2. Extract it into GLPI's `plugins/` folder. The zip contains a `chatwoot/` directory.
+3. Go to **Setup > Plugins**, then install and enable **Chatwoot**.
+4. Go to **Setup > General > Chatwoot** and configure it (next section).
 
 <details>
-<summary>Expand file tree</summary>
+<summary><b>Updating to a new version</b></summary>
 
+Replace the folder in one step, so GLPI never sees it half-copied. While files are being copied,
+GLPI logs a harmless `Unable to load plugin "chatwoot" information` warning.
+
+```bash
+cd /path/to/glpi                         # the folder that contains plugins/
+unzip -q chatwoot-x.y.z.zip -d ../chatwoot-new
+mv plugins/chatwoot ../chatwoot-old && mv ../chatwoot-new/chatwoot plugins/chatwoot
+rm -rf ../chatwoot-old ../chatwoot-new
 ```
-chatwoot/
-├── setup.php                       Plugin metadata, hooks, public route registration
-├── hook.php                        Install/uninstall, migrations, automatic action
-├── src/
-│   └── Config.php                  All the logic: connection, widget, permissions, tickets
-├── templates/
-│   └── config.html.twig            Configuration screen (Setup > General > Chatwoot)
-├── front/
-│   ├── config.php                  Displays the configuration tab
-│   └── config.form.php             Saves the configuration
-├── ajax/
-│   ├── test.php                    "Test connection" button
-│   ├── search_targets.php          Profile/Group/User search for the permissions screen
-│   └── sync_contact.php            Syncs city/country via the REST API after setUser()
-├── public/                         Scripts/assets accessed directly by the browser (GLPI 11)
-│   ├── js/chatwoot.js.php          Loads and identifies the widget on every GLPI page
-│   ├── css/chatwoot.css            Styles for the configuration screen
-│   ├── avatar.php                  Profile photo proxy for Chatwoot's native contact card (signed token)
-│   └── dashboard_app/              Everything for the "GLPI" panel shown inside Chatwoot
-│       ├── dashboard_app.php       HTML shell (resolves the account's Chatwoot language server-side)
-│       ├── css/dashboard_app.css   Panel styles
-│       ├── js/dashboard_app.js     Panel logic
-│       ├── dashboard_identify.php      Resolves the conversation's contact once, returns a short-lived capability
-│       ├── dashboard_tickets.php       Ticket list (JSON)
-│       ├── dashboard_ticket_detail.php Ticket detail, with timeline and attachments (JSON)
-│       ├── dashboard_document.php      Attachment/embedded image download (per-document signed links)
-│       └── locales/                Plain JSON translations for this panel only (en.json, pt_BR.json)
-├── locales/                        GLPI-side gettext translations: chatwoot.pot, en_GB/en_US/pt_BR .po/.mo
-├── logo.png                        Plugin logo (GLPI's plugin list reads it from the plugin root)
-├── screenshots/                    Images used in the "Screenshots" section above
-├── tests/                          PHPUnit suite for the security logic (not shipped in the release zip)
-├── .github/workflows/ci.yml        CI: lint + sanity check + PHPUnit on PHP 8.1–8.4
-├── LICENSE
-├── CHANGELOG.md
-└── README.md
-```
+
+Then open **Setup > Plugins** and click **Update** if GLPI asks for it. Upgrading from 1.0.0 keeps
+the panel already registered in Chatwoot working.
 
 </details>
 
-The `glpi_plugin_chatwoot_configs` table stores the configuration; `glpi_plugin_chatwoot_targets`
-stores the permissions (profiles/groups/users authorized to see the widget) and the entities the
-panel is restricted to; `glpi_plugin_chatwoot_access_log` is the short rolling log used to throttle
-identity lookups.
+<a id="configuration"></a>
 
-## Development and tests
+## ⚙️ Configuration
 
-The security-relevant logic has a PHPUnit suite under `tests/`, run by CI on PHP 8.1 to 8.4:
+**Setup > General > Chatwoot**
 
-- capabilities: bound to one user, expire, re-check that the account is active and not deleted;
-- per-document links: bound to user + ticket + document, expire, reject tampering and capabilities;
-- document serving: GLPI core's inline allow-list (images except SVG, PDF), real upload names;
-- attachments list: only the ticket and the follow-ups/solution actually shown are queried;
-- Chatwoot URL validation, and the 1.0.0 → 1.0.1 token encryption migration.
+| Field | Where to find it in Chatwoot |
+|---|---|
+| **Chatwoot URL** | Your instance address, e.g. `https://chat.yourcompany.com` |
+| **API Access Token** | Profile settings > Access Token, preferably an **administrator's** |
+| **Account ID** | In the dashboard URL: `/app/accounts/{id}/...` |
+| **Inbox ID** | Settings > Inboxes > your Website inbox |
+
+Click **Test connection**, then **Save**. On save, the plugin:
+
+- fetches the **Website Token** and **HMAC Token** of the inbox (no copy/paste);
+- registers the **"GLPI" tab** under Integrations > Dashboard Apps in Chatwoot.
+
+The API token field is always shown blank after saving. Leave it blank to keep the stored token.
+
+<details>
+<summary><b>All options</b></summary>
+
+| Section | Option | Default |
+|---|---|---|
+| **Widget** | Enable widget | off |
+| | Position (left / right) | right |
+| | Bubble type (standard / expanded) | expanded |
+| | Launcher title | empty |
+| | Dark mode (auto / light / dark) | auto |
+| **Who sees the widget** | Profiles, Groups, Users | everyone authenticated |
+| **GLPI tab security** | Show internal/private follow-ups to Chatwoot agents | off |
+| | Restrict the panel to specific entities (sub-entities included) | off |
+| | Regenerate panel token (revokes the current one) | button |
+
+</details>
+
+## 🌍 Languages
+
+| | |
+|---|---|
+| **Configuration screen** | GLPI gettext (`locales/*.po`/`*.mo`): **en_GB**, **en_US**, **pt_BR**. Follows each GLPI user's language. |
+| **GLPI tab in Chatwoot** | JSON dictionaries (`public/dashboard_app/locales/`): **en**, **pt_BR**. Follows the **Chatwoot account's** language automatically, including GLPI values such as status and priority. |
+
+<details>
+<summary><b>Adding a language</b></summary>
+
+- **Configuration screen:** copy `locales/chatwoot.pot` to `locales/{code}.po` (e.g. `es_ES.po`),
+  translate it, then compile it with `msgfmt {code}.po -o {code}.mo`.
+- **GLPI tab:** add `public/dashboard_app/locales/{code}.json` with the same keys as `en.json`, load
+  it in `dashboard_app.php` (`$dicts_json`), and add the code to the language checks in
+  `dashboard_app.js`.
+
+The tab's language comes from `GET /api/v1/accounts/{account_id}` (`locale`) and is rendered
+server-side from the first byte. GLPI-sourced labels are switched for that single request only
+(`Config::applyRequestLanguage()`), so no real GLPI session is touched.
+
+</details>
+
+<a id="security"></a>
+
+## 🔐 Security
+
+Version 1.0.1 fixes every finding of the GLPI team's pre-publication security review
+([details in the changelog](CHANGELOG.md)).
+
+| Concern | How it's handled |
+|---|---|
+| **Stored secrets** | API Access Token, HMAC Token and panel token are encrypted with `GLPIKey` and re-encrypted by `security:change_key` (`Hooks::SECURED_FIELDS`). None is ever sent back to the browser. |
+| **Who the contact is** | The tab sends only the conversation id. The contact is fetched **server-side from the Chatwoot API**, so a leaked panel token can't be used to name an arbitrary GLPI user. |
+| **Panel authorization** | Panel token **plus** a 5-minute capability bound to one GLPI user and one conversation, both sent as **headers**, never in URLs. `Referrer-Policy: no-referrer`. Token can be regenerated anytime. |
+| **Attachments** | Per-document signed links (user + ticket + document, 10 min). Ownership re-checked on every download. Inline only for images (not SVG) and PDF, like GLPI core; everything else is a download, with `nosniff` and a CSP sandbox. |
+| **Internal notes** | Private follow-ups and their files stay out of Chatwoot unless explicitly enabled. |
+| **Accounts & scope** | Only active, non-deleted GLPI users. Optional entity restriction. Identity lookups rate-limited per IP and logged. |
+| **Widget code** | Always the static, documented `sdk.js` loader. Nothing returned by the Chatwoot API is executed. |
+| **Outbound calls** | `http`/`https` only, TLS verified, no redirects while carrying the API token, URL validated on save. |
+| **Framing & messages** | `frame-ancestors` limited to your Chatwoot. `postMessage` accepted only from its origin. |
+| **Rendering** | Ticket content converted to plain text server-side and inserted with `textContent`. |
+
+<a id="troubleshooting"></a>
+
+## 🛠️ Troubleshooting
+
+<details>
+<summary><b>The "GLPI" tab doesn't appear in Chatwoot</b></summary>
+
+Check under **Integrations > Dashboard Apps** whether "GLPI" exists. If not, save the plugin
+configuration again: the tab is registered on save, once the plugin reaches the inbox successfully.
+</details>
+
+<details>
+<summary><b>The tab is empty for WhatsApp (or another inbox) conversations</b></summary>
+
+The API token's user can't see that inbox. Use an administrator's token, or add that agent to the
+inbox. The person also needs a matching login or phone number (Phone, Mobile phone or Phone 2) in
+GLPI.
+</details>
+
+<details>
+<summary><b>"Invalid or unconfigured integration token"</b></summary>
+
+The panel token changed (for example after **Regenerate panel token**) and Chatwoot still has the
+old URL. Save the configuration again so the Dashboard App is re-registered, then reload Chatwoot.
+</details>
+
+<details>
+<summary><b>Where are the errors logged?</b></summary>
+
+In GLPI's `files/_log/php-errors.log`, prefixed with `[chatwoot]`.
+</details>
+
+<details>
+<summary><b>Why GLPI 11 only?</b></summary>
+
+GLPI 10 uses a different bootstrap and routing model (`inc/includes.php` in every script, no
+`public/` convention, no `Firewall`/`SessionManager` APIs for session-less endpoints). Supporting
+both would mean two plugin architectures, so installation is blocked on versions older than 11.0.0.
+</details>
+
+## 🧪 Development
+
+The security-relevant logic is covered by a PHPUnit suite, run by [CI](.github/workflows/ci.yml) on
+PHP 8.1 to 8.4. It tests capabilities, signed document links, the inline allow-list, the
+attachments query scope, conversation-based identity, URL validation and the 1.0.0 → 1.0.1
+migration.
 
 ```bash
 composer install
 vendor/bin/phpunit
 ```
 
-A small stand-in for the few GLPI core classes involved (`tests/bootstrap.php`) lets the suite run
-without a GLPI installation; `GLPIKey` there uses the same XChaCha20-Poly1305 scheme as GLPI's, so
-tokens are exercised with real authenticated encryption. Unexpected failures in the plugin's
-graceful-degradation paths are written to GLPI's `files/_log/php-errors.log`.
+`tests/bootstrap.php` provides minimal stand-ins for the GLPI classes involved. Its `GLPIKey` uses
+the same XChaCha20-Poly1305 scheme as GLPI, so tokens are tested with real encryption.
 
-## License
+<details>
+<summary><b>File structure</b></summary>
 
-[AGPL-3.0-or-later](LICENSE) (AGPLv3+).
+```
+chatwoot/
+├── setup.php                        Plugin metadata, hooks, public route registration
+├── hook.php                         Install/uninstall, migrations, automatic action
+├── logo.png                         Plugin logo (shown in GLPI's plugin list)
+├── src/Config.php                   Connection, widget, permissions, tickets, security
+├── templates/config.html.twig       Configuration screen
+├── front/                           Configuration page and form handler
+├── ajax/                            Test connection, permission pickers, contact sync
+├── public/
+│   ├── js/chatwoot.js.php           Loads and identifies the widget on GLPI pages
+│   ├── avatar.php                   Profile photo proxy (signed token)
+│   └── dashboard_app/               The "GLPI" tab shown inside Chatwoot
+│       ├── dashboard_app.php        Page shell (language resolved server-side)
+│       ├── dashboard_identify.php   Conversation → contact → GLPI user → capability
+│       ├── dashboard_tickets.php    Ticket list (JSON)
+│       ├── dashboard_ticket_detail.php  Ticket detail, timeline, attachments (JSON)
+│       ├── dashboard_document.php   Attachment/image download (signed links)
+│       └── css/ js/ locales/        Panel assets and translations
+├── locales/                         gettext: chatwoot.pot, en_GB/en_US/pt_BR .po/.mo
+└── tests/ · .github/                PHPUnit suite and CI (not in the release zip)
+```
 
-## Author
+Database tables: `glpi_plugin_chatwoot_configs` (configuration), `glpi_plugin_chatwoot_targets`
+(widget permissions and panel entities), `glpi_plugin_chatwoot_access_log` (short rolling log used
+to throttle identity lookups).
 
-**Michael Rodrigues** — [github.com/MichaelRodriguesOficial](https://github.com/MichaelRodriguesOficial)
+</details>
+
+<a id="support"></a>
+
+## ☕ Support the project
+
+<table>
+<tr>
+<td valign="top">
+
+**Enjoying the plugin?** It's an independent, open-source project, built and maintained with care
+so that GLPI and Chatwoot teams can work together without switching screens.
+
+If it saves your team time, you can buy me a coffee. It helps keep the plugin up to date with new
+GLPI and Chatwoot versions. It's completely optional: a ⭐ on the repository, a bug report, an idea
+or a pull request help just as much.
+
+**Curtiu o plugin?** É um projeto independente e de código aberto. Se ele facilita o dia a dia da
+sua equipe, você pode me pagar um café via Pix 💚. Isso ajuda a manter o plugin atualizado com as
+novas versões do GLPI e do Chatwoot. É totalmente opcional: uma ⭐ no repositório, um relato de bug,
+uma ideia ou um PR ajudam tanto quanto.
+
+</td>
+<td width="220" align="center" valign="top">
+
+<img src="docs/pix-qrcode.png" alt="Pix QR code" width="200"><br>
+<sub>☕ Pix: scan with your bank app</sub>
+
+</td>
+</tr>
+</table>
+
+## 📄 License
+
+[AGPL-3.0-or-later](LICENSE). Made by **Michael Rodrigues** ·
+[github.com/MichaelRodriguesOficial](https://github.com/MichaelRodriguesOficial)
