@@ -66,6 +66,11 @@ security review of 1.0.0.
 - Translations: every new configuration string is translated (pt_BR, en_GB, en_US), and the panel's
   "invalid token" message now comes from its translation dictionary.
 - `sanity.php` checked paths one directory above the plugin root and always failed; fixed.
+- The panel now lists files attached to follow-ups and to the solution, not only those attached
+  directly to the ticket (in GLPI 11, a file added while replying is linked to the follow-up). Each
+  follow-up shows its own files right under it, and the "Attachments" section lists them all. Files
+  of a private follow-up follow the same visibility rule as the follow-up itself, both in the list
+  and in the download endpoint.
 
 ## 1.0.0 — Initial release
 

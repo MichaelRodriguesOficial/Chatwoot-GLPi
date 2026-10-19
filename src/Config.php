@@ -1162,8 +1162,37 @@ class Config extends CommonDBTM
             'date_mod'    => (string) $row['date_mod'],
             'url'         => '/front/ticket.form.php?id=' . (int) $row['id'],
             'timeline'    => self::getTicketTimeline($ticket_id, $user_id, self::showPrivateFollowups()),
-            'attachments' => self::getTicketAttachments($ticket_id),
         ];
+
+        // Documents attached to the ticket itself AND to the follow-ups and
+        // solution shown above — in GLPI 11 a file added while replying is
+        // linked to the ITILFollowup, not to the Ticket. Built from the
+        // timeline the panel actually shows, so a private follow-up hidden by
+        // configuration never leaks its attachments either. Images already
+        // shown as thumbnails are left out of the lists.
+        $inline_ids = $description_images;
+        foreach ($detail['timeline'] as $item) {
+            foreach ((array) ($item['images'] ?? []) as $id) {
+                $inline_ids[] = (int) $id;
+            }
+        }
+        $all_attachments = self::getTicketAttachments($ticket_id, $detail['timeline'], $inline_ids);
+        $by_item = [];
+        foreach ($all_attachments as $attachment) {
+            $by_item[$attachment['source']][] = $attachment;
+        }
+        foreach ($detail['timeline'] as &$item) {
+            $item['attachments'] = array_map(
+                static fn ($a) => ['id' => $a['id'], 'name' => $a['name'], 'size' => $a['size']],
+                $by_item[$item['item_key']] ?? []
+            );
+            unset($item['item_key']);
+        }
+        unset($item);
+        $detail['attachments'] = array_map(
+            static fn ($a) => ['id' => $a['id'], 'name' => $a['name'], 'size' => $a['size']],
+            $all_attachments
+        );
 
         // One short-lived link per document shown in this view (embedded
         // images in the description and follow-ups, plus attachments), so
@@ -1236,7 +1265,7 @@ class Config extends CommonDBTM
 
         if ($DB->tableExists('glpi_itilfollowups')) {
             try {
-                $select = ['glpi_itilfollowups.content', 'glpi_itilfollowups.date_creation'];
+                $select = ['glpi_itilfollowups.id', 'glpi_itilfollowups.content', 'glpi_itilfollowups.date_creation'];
                 $has_private = $DB->fieldExists('glpi_itilfollowups', 'is_private');
                 $has_users   = $DB->fieldExists('glpi_itilfollowups', 'users_id');
                 $has_source  = $DB->fieldExists('glpi_itilfollowups', 'requesttypes_id') && $DB->tableExists('glpi_requesttypes');
@@ -1274,6 +1303,7 @@ class Config extends CommonDBTM
                         ?: (string) ($frow['name'] ?? __('Unknown', 'chatwoot'));
                     $raw = (string) ($frow['content'] ?? '');
                     $timeline[] = [
+                        'item_key'     => 'ITILFollowup:' . (int) $frow['id'],
                         'type'         => 'followup',
                         'author'       => $author,
                         'is_requester' => $has_users && (int) ($frow['users_id'] ?? 0) === $requester_id,
@@ -1293,7 +1323,7 @@ class Config extends CommonDBTM
 
         if ($DB->tableExists('glpi_itilsolutions')) {
             try {
-                $select = ['glpi_itilsolutions.content', 'glpi_itilsolutions.date_creation'];
+                $select = ['glpi_itilsolutions.id', 'glpi_itilsolutions.content', 'glpi_itilsolutions.date_creation'];
                 $has_status = $DB->fieldExists('glpi_itilsolutions', 'status');
                 $has_users  = $DB->fieldExists('glpi_itilsolutions', 'users_id');
                 if ($has_status) {
@@ -1319,6 +1349,7 @@ class Config extends CommonDBTM
                         ?: (string) ($srow['name'] ?? __('Unknown', 'chatwoot'));
                     $raw = (string) ($srow['content'] ?? '');
                     $timeline[] = [
+                        'item_key'     => 'ITILSolution:' . (int) $srow['id'],
                         'type'         => 'solution',
                         'author'       => $author,
                         'is_requester' => $has_users && (int) ($srow['users_id'] ?? 0) === $requester_id,
@@ -1359,7 +1390,12 @@ class Config extends CommonDBTM
      *
      * @return array<int, array{id: int, name: string, size: string}>
      */
-    private static function getTicketAttachments(int $ticket_id): array
+    /**
+     * @param array<int, array> $timeline   items as built by getTicketTimeline() (already privacy-filtered)
+     * @param int[]             $exclude_ids documents already displayed as inline thumbnails
+     * @return array<int, array{id:int, name:string, size:string, source:string}>
+     */
+    private static function getTicketAttachments(int $ticket_id, array $timeline = [], array $exclude_ids = []): array
     {
         global $DB;
 
@@ -1375,7 +1411,7 @@ class Config extends CommonDBTM
             $has_doc_deleted  = $DB->fieldExists('glpi_documents', 'is_deleted');
             $has_link_deleted = $DB->fieldExists('glpi_documents_items', 'is_deleted');
 
-            $select = ['glpi_documents.id'];
+            $select = ['glpi_documents.id', 'glpi_documents_items.itemtype', 'glpi_documents_items.items_id'];
             if ($has_name) {
                 $select[] = 'glpi_documents.name';
             }
@@ -1386,7 +1422,20 @@ class Config extends CommonDBTM
                 $select[] = 'glpi_documents.filesize';
             }
 
-            $where = ['glpi_documents_items.itemtype' => 'Ticket', 'glpi_documents_items.items_id' => $ticket_id];
+            $ids_by_type = ['ITILFollowup' => [], 'ITILSolution' => []];
+            foreach ($timeline as $item) {
+                [$type, $id] = array_pad(explode(':', (string) ($item['item_key'] ?? ''), 2), 2, '');
+                if (isset($ids_by_type[$type]) && (int) $id > 0) {
+                    $ids_by_type[$type][] = (int) $id;
+                }
+            }
+            $or = [['glpi_documents_items.itemtype' => 'Ticket', 'glpi_documents_items.items_id' => $ticket_id]];
+            foreach ($ids_by_type as $type => $ids) {
+                if (!empty($ids)) {
+                    $or[] = ['glpi_documents_items.itemtype' => $type, 'glpi_documents_items.items_id' => $ids];
+                }
+            }
+            $where = [['OR' => $or]];
             // Deleted documents/links (trash bin) should not show up here —
             // without this check, old "ghost" entries could get mixed in
             // with the real attachments.
@@ -1406,12 +1455,23 @@ class Config extends CommonDBTM
                     'glpi_documents' => ['FKEY' => ['glpi_documents_items' => 'documents_id', 'glpi_documents' => 'id']],
                 ],
                 'WHERE' => $where,
+                'ORDER' => 'glpi_documents.id',
             ]) as $drow) {
                 $doc_id = (int) ($drow['id'] ?? 0);
-                if ($doc_id > 0 && isset($seen[$doc_id])) {
+                if ($doc_id <= 0 || in_array($doc_id, $exclude_ids, true)) {
                     continue;
                 }
-                $seen[$doc_id] = true;
+                $source = (string) $drow['itemtype'] . ':' . (int) $drow['items_id'];
+                if (isset($seen[$doc_id])) {
+                    // Same file linked to both the ticket and a follow-up/
+                    // solution: keep the more specific place, so it shows
+                    // up under that follow-up rather than only at ticket level.
+                    if ($drow['itemtype'] !== 'Ticket') {
+                        $attachments[$seen[$doc_id]]['source'] = $source;
+                    }
+                    continue;
+                }
+                $seen[$doc_id] = count($attachments);
 
                 $name = self::completeFileExtension(
                     trim((string) ($drow['name'] ?? '')),
@@ -1422,14 +1482,18 @@ class Config extends CommonDBTM
                 }
 
                 $attachments[] = [
-                    'id'   => $doc_id,
-                    'name' => $name,
-                    'size' => $has_filesize ? self::formatFileSize((int) ($drow['filesize'] ?? 0)) : '',
+                    'id'     => $doc_id,
+                    'name'   => $name,
+                    'size'   => $has_filesize ? self::formatFileSize((int) ($drow['filesize'] ?? 0)) : '',
+                    'source' => $source,
                 ];
             }
         } catch (\Throwable $e) {
             // Schema different than expected on this installation: no
-            // attachments list, but the rest of the ticket keeps working normally.
+            // attachments list, but the rest of the ticket keeps working
+            // normally — logged (files/_log/php-errors.log) instead of being
+            // swallowed silently, so the cause can actually be found.
+            trigger_error('[chatwoot] Ticket attachments list failed: ' . $e->getMessage(), E_USER_WARNING);
         }
 
         return $attachments;
@@ -1515,10 +1579,16 @@ class Config extends CommonDBTM
             }
 
             if (!$linked && $DB->tableExists('glpi_itilfollowups')) {
+                $followup_where = ['itemtype' => 'Ticket', 'items_id' => $ticket_id];
+                // Same visibility rule as the timeline: a private follow-up's
+                // files are only served when private follow-ups are enabled.
+                if (!self::showPrivateFollowups() && $DB->fieldExists('glpi_itilfollowups', 'is_private')) {
+                    $followup_where['is_private'] = 0;
+                }
                 $followup_ids = array_column(iterator_to_array($DB->request([
                     'SELECT' => ['id'],
                     'FROM'   => 'glpi_itilfollowups',
-                    'WHERE'  => ['itemtype' => 'Ticket', 'items_id' => $ticket_id],
+                    'WHERE'  => $followup_where,
                 ])), 'id');
                 if (!empty($followup_ids)) {
                     $via_followup = iterator_to_array($DB->request([

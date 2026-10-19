@@ -465,6 +465,12 @@
             var imgs = imageGallery(item.images);
             if (imgs) box.appendChild(imgs);
 
+            // Files attached to this specific follow-up/solution, right under
+            // it — same place GLPI's own timeline shows them.
+            (item.attachments || []).forEach(function (f) {
+                box.appendChild(attachmentRow(f));
+            });
+
             detailViewEl.appendChild(box);
         });
     }
@@ -485,29 +491,33 @@
         }
 
         files.forEach(function (f) {
-            var row = document.createElement('div');
-            row.className = 'cw-attachment';
-
-            var icon = document.createElement('span');
-            icon.innerHTML = '&#128206;';
-            row.appendChild(icon);
-
-            var name = document.createElement('a');
-            name.className = 'cw-attachment-link';
-            name.href = docLink(f.id) || '#';
-            name.target = '_blank';
-            name.rel = 'noreferrer noopener';
-            name.textContent = f.name;
-            row.appendChild(name);
-
-            if (f.size) {
-                var size = document.createElement('small');
-                size.textContent = f.size;
-                row.appendChild(size);
-            }
-
-            detailViewEl.appendChild(row);
+            detailViewEl.appendChild(attachmentRow(f));
         });
+    }
+
+    function attachmentRow(f) {
+        var row = document.createElement('div');
+        row.className = 'cw-attachment';
+
+        var icon = document.createElement('span');
+        icon.innerHTML = '&#128206;';
+        row.appendChild(icon);
+
+        var name = document.createElement('a');
+        name.className = 'cw-attachment-link';
+        name.href = docLink(f.id) || '#';
+        name.target = '_blank';
+        name.rel = 'noreferrer noopener';
+        name.textContent = f.name;
+        row.appendChild(name);
+
+        if (f.size) {
+            var size = document.createElement('small');
+            size.textContent = f.size;
+            row.appendChild(size);
+        }
+
+        return row;
     }
 
     function bindBack() {
