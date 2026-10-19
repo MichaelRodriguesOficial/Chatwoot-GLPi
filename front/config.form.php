@@ -41,10 +41,15 @@ if (isset($_POST['rotate_token'])) {
 if (isset($_POST['update'])) {
     $required = [
         'base_url'   => __('Chatwoot URL', 'chatwoot'),
-        'api_key'    => __('API Access Token', 'chatwoot'),
         'account_id' => __('Account ID', 'chatwoot'),
         'inbox_id'   => __('Inbox ID', 'chatwoot'),
     ];
+    // The API Access Token field is always rendered blank (the stored secret
+    // is never echoed back into the page), so it's only mandatory while there
+    // is no token saved yet; afterwards blank means "keep the current one".
+    if (trim((string) (ChatwootConfig::getConfig()['api_key'] ?? '')) === '') {
+        $required = ['api_key' => __('API Access Token', 'chatwoot')] + $required;
+    }
     $missing = [];
     foreach ($required as $field => $label) {
         if (empty($_POST[$field])) {

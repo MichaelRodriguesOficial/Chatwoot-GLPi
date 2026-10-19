@@ -1520,8 +1520,23 @@ class Config extends CommonDBTM
     public static function serveDocument(array $file): void
     {
         if (class_exists('\\Toolbox') && method_exists('\\Toolbox', 'getFileAsResponse')) {
-            \Toolbox::getFileAsResponse($file['path'], $file['name'], $file['mime']);
-            return;
+            try {
+                // In GLPI 11 this helper only BUILDS a Symfony Response — it
+                // never writes anything to the output on its own. It has to
+                // be sent explicitly, otherwise the endpoint answers 200 with
+                // an empty body (and the panel shows broken attachments).
+                $response = \Toolbox::getFileAsResponse($file['path'], $file['name'], $file['mime']);
+                if (is_object($response) && method_exists($response, 'send')) {
+                    $response->send();
+                    return;
+                }
+                // Older cores that stream the file themselves return nothing.
+                if ($response === null) {
+                    return;
+                }
+            } catch (\Throwable $e) {
+                // Falls through to the manual, allow-list based response below.
+            }
         }
 
         $disposition = self::canDisplayInline($file['mime']) ? 'inline' : 'attachment';
