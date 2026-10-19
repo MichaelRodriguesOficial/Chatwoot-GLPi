@@ -20,14 +20,15 @@ if ($token === '') {
     return;
 }
 
-$decoded = base64_decode(rawurldecode($token), true);
-if ($decoded === false) {
+// GLPIKey::encrypt() already returns base64 (see Config::getUserIdentity()),
+// so only the URL-encoding needs undoing here — no extra base64 layer.
+$glpikey = new GLPIKey();
+try {
+    $user_id = (int) $glpikey->decrypt(rawurldecode($token));
+} catch (\Throwable $e) {
     http_response_code(404);
     return;
 }
-
-$glpikey = new GLPIKey();
-$user_id = (int) $glpikey->decrypt($decoded);
 if ($user_id <= 0) {
     http_response_code(404);
     return;

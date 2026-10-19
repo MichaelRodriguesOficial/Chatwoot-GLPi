@@ -13,7 +13,7 @@ header('Content-Type: application/json; charset=UTF-8');
 $itemtype = (string) ($_GET['itemtype'] ?? '');
 $term     = (string) ($_GET['term'] ?? '');
 
-if (!in_array($itemtype, ['Profile', 'Group', 'User'], true)) {
+if (!in_array($itemtype, ['Profile', 'Group', 'User', 'Entity'], true)) {
     echo json_encode([]);
     return;
 }

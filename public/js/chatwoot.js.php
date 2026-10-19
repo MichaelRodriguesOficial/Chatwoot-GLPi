@@ -32,7 +32,6 @@ if (!ChatwootConfig::canCurrentUserSeeWidget()) {
 
 $base_url      = rtrim((string) $c['base_url'], '/');
 $website_token = (string) $c['website_token'];
-$widget_script = trim((string) ($c['widget_script'] ?? ''));
 
 // --- User identification (setUser + identifier_hash) ---
 // identifier_hash only exists if the Inbox has "Identity Validation" enabled
@@ -103,19 +102,18 @@ if (!window.__glpiChatwootLoaded) {
             body: 'identifier=' + encodeURIComponent(<?php echo $identifier_json; ?>) + '&_glpi_csrf_token=' + encodeURIComponent(<?php echo $csrf_json; ?>)
         }).catch(function () { /* best effort; fine if it fails */ });
     });
-<?php if ($widget_script !== ''): ?>
-    <?php
-    // The content below is exactly what the Chatwoot API returned for this
-    // Inbox (the web_widget_script field), only with the <script> tags
-    // removed — GLPI does not rewrite or reinterpret this loading logic, so
-    // future changes to the embed format arrive here automatically on the
-    // next sync, without needing a plugin update.
-    echo $widget_script;
-    ?>
-<?php else: ?>
-    // Safety fallback: we don't have the official script cached yet
-    // (e.g., just installed and the initial fetch failed). Equivalent basic
-    // loading, without blocking the widget.
+
+    // Always uses the fixed, documented SDK loader — takes only the two
+    // parameters it actually needs (websiteToken, baseUrl) rather than
+    // executing whatever the Chatwoot API's web_widget_script field happens
+    // to contain. A previous version echoed that field verbatim into every
+    // authenticated GLPI page; since it's persisted and silently refreshed
+    // hourly by a cron task with no review, a compromised or
+    // redirect-hijacked Chatwoot instance could have used it to run
+    // arbitrary JavaScript on GLPI's own origin for every logged-in user,
+    // super-admins included (MEDIUM 5 of the 1.0.0 security review). This
+    // loader is a plain <script src>, so it stays subject to CSP, unlike an
+    // inline payload replayed from GLPI's own origin.
     (function () {
         var s = document.createElement('script');
         s.src = <?php echo json_encode($base_url, JSON_UNESCAPED_SLASHES); ?> + '/packs/js/sdk.js';
@@ -130,5 +128,4 @@ if (!window.__glpiChatwootLoaded) {
         };
         document.head.appendChild(s);
     })();
-<?php endif; ?>
 }

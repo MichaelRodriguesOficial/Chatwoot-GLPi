@@ -14,6 +14,7 @@ use GlpiPlugin\Chatwoot\Config as ChatwootConfig;
 
 header('Content-Type: text/html; charset=UTF-8');
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+header('X-Content-Type-Options: nosniff');
 
 $token          = (string) ($_GET['t'] ?? '');
 $is_valid       = ChatwootConfig::isValidDashboardAppToken($token);
@@ -21,6 +22,7 @@ $status_options = [];
 $en_dict        = [];
 $pt_dict        = [];
 $locale         = 'en';
+$chatwoot_origin = '';
 
 if ($is_valid) {
     // Translations for this panel's own fixed labels live as plain JSON next
@@ -42,6 +44,21 @@ if ($is_valid) {
     // for part of the page to end up in the "wrong" language after a switch.
     $config = ChatwootConfig::getConfig();
     $locale = ChatwootConfig::getAccountLocale($config) === 'pt_BR' ? 'pt_BR' : 'en';
+
+    // The origin the panel is allowed to exchange postMessage data with —
+    // rendered server-side so dashboard_app.js can reject any message that
+    // doesn't come from the configured Chatwoot instance itself (LOW 6 of
+    // the 1.0.0 review: the handler previously accepted messages from any
+    // origin at all).
+    $base_url_for_origin = (string) ($config['base_url'] ?? '');
+    $origin_parts         = parse_url($base_url_for_origin);
+    if (!empty($origin_parts['scheme']) && !empty($origin_parts['host'])) {
+        $chatwoot_origin = $origin_parts['scheme'] . '://' . $origin_parts['host']
+            . (!empty($origin_parts['port']) ? ':' . $origin_parts['port'] : '');
+
+        // Only Chatwoot's own origin may frame this panel.
+        header("Content-Security-Policy: frame-ancestors 'self' {$chatwoot_origin}");
+    }
 
     // Must run BEFORE ticketStatusOptions() below — that method calls GLPI's
     // own __(), which only picks up the language switched here if it already
@@ -76,10 +93,10 @@ $asset_version = defined('PLUGIN_CHATWOOT_VERSION') ? PLUGIN_CHATWOOT_VERSION : 
 <title>Tickets - GLPI</title>
 <link rel="stylesheet" href="css/dashboard_app.css?v=<?php echo urlencode($asset_version); ?>">
 </head>
-<body data-token="<?php echo htmlspecialchars($token, ENT_QUOTES); ?>" data-locale="<?php echo htmlspecialchars($locale, ENT_QUOTES); ?>">
+<body data-token="<?php echo htmlspecialchars($token, ENT_QUOTES); ?>" data-locale="<?php echo htmlspecialchars($locale, ENT_QUOTES); ?>" data-chatwoot-origin="<?php echo htmlspecialchars($chatwoot_origin, ENT_QUOTES); ?>">
 
 <?php if (!$is_valid): ?>
-<div class="cw-error" id="cw-invalid-token">Invalid or unconfigured integration token. Save the plugin configuration again under Setup &gt; Chatwoot.</div>
+<div class="cw-error" id="cw-invalid-token"><?php echo htmlspecialchars(chatwoot_dashboard_t($dict, 'invalid_token', 'Invalid or unconfigured integration token. Save the plugin configuration again under Setup > Chatwoot.')); ?></div>
 <?php else: ?>
 
 <div id="cw-list-view">

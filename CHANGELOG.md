@@ -1,5 +1,57 @@
 # Changelog
 
+## 1.0.1 — Security hardening
+
+Addresses all 8 findings (2 HIGH, 3 MEDIUM, 3 LOW) from the GLPI Plugins catalog's pre-publication
+security review of 1.0.0.
+
+### HIGH
+
+- The three Dashboard App data endpoints no longer trust a raw `identifier`/`phone` query parameter
+  as identity. A new endpoint, `dashboard_identify.php`, resolves it once and mints a short-lived
+  (5 minute) capability — authenticated-encrypted with `GLPIKey`, bound to a single GLPI user id —
+  that the ticket list, ticket detail, and document endpoints now require instead.
+- Internal/private follow-ups are only exposed through the panel if an administrator explicitly
+  enables "Show internal/private follow-ups to Chatwoot agents" (off by default).
+- The panel's ticket queries can optionally be restricted to a chosen set of entities.
+- Only active, non-deleted GLPI accounts can be resolved.
+- The unauthenticated identity/ticket/document endpoints are now rate-limited per IP address, with a
+  lightweight audit log of access attempts.
+- Ticket attachments and embedded images are served through GLPI core's own
+  `Toolbox::getFileAsResponse()` (inline allow-list, correct `Content-Disposition` encoding, path
+  traversal safety) instead of a hand-rolled response that applied `Content-Disposition: inline`
+  unconditionally, including to an attacker-controlled `text/html` attachment.
+
+### MEDIUM
+
+- The Dashboard App integration token is now encrypted at rest and registered under
+  `Hooks::SECURED_FIELDS`. It — and the new capability — travel as request headers rather than URL
+  query parameters, so neither lands in access logs, browser history, or the `Referer` header.
+  Attachments/images are fetched by the panel as headers-authenticated blobs instead of plain
+  `<img src>`/`<a href>` links.
+- A "Regenerate panel token" control lets administrators revoke a potentially leaked token on demand.
+- Outbound requests to the Chatwoot API never follow redirects while carrying the API Access Token
+  header, and are restricted to `http`/`https` only. The Chatwoot URL is now validated before saving
+  the configuration (previously only the "Test connection" button validated it).
+- The widget loader on GLPI's own pages no longer executes JavaScript returned by the Chatwoot API —
+  it always uses the documented, static `sdk.js` loader, so it stays subject to your
+  Content-Security-Policy.
+
+### LOW
+
+- The panel's `postMessage` handler now checks `event.origin` against the configured Chatwoot
+  instance, and the panel sends a `Content-Security-Policy: frame-ancestors` header so it can't be
+  framed by an arbitrary site.
+- The configuration form now builds its saved fields from an explicit allow-list instead of the whole
+  `$_POST`, so a crafted request can no longer overwrite `dashboard_app_token`/`dashboard_app_id`.
+- The API Access Token field on the configuration screen is always rendered blank; leaving it blank
+  on save keeps the existing value, so the decrypted secret is never re-emitted into the page.
+
+### Other
+
+- Dropped the Dashboard App widget-script storage path entirely (superseded by the fix above) and
+  the vestigial pre-1.0.0 upgrade branches in the install routine.
+
 ## 1.0.0 — Initial release
 
 First public version. Summary of everything the plugin does:

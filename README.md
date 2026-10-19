@@ -197,22 +197,40 @@ Integrations > Dashboard Apps whether "GLPI" was created; if not, save the confi
 
 ## Security
 
-- **API Access Token and HMAC Token** are encrypted with GLPI's own `GLPIKey` class (the same one
-  used for LDAP/SMTP passwords) and automatically re-encrypted whenever the administrator runs
-  `php bin/console security:change_key` (registered via `Hooks::SECURED_FIELDS`). Neither is ever
-  sent to the browser.
+This section was revised after an independent pre-publication security review of 1.0.0 (see
+[`CHANGELOG.md`](CHANGELOG.md) for the full list of fixes in 1.0.1).
+
+- **API Access Token, HMAC Token, and the Dashboard App integration token** are encrypted with
+  GLPI's own `GLPIKey` class (the same one used for LDAP/SMTP passwords) and automatically
+  re-encrypted whenever the administrator runs `php bin/console security:change_key` (registered via
+  `Hooks::SECURED_FIELDS`). None of them is ever sent to the browser — the config screen's API
+  Access Token field is always rendered blank; leaving it blank on save keeps the stored value.
 - The panel inside Chatwoot (profile photo, ticket list, detail, attachments) runs in an iframe on
   Chatwoot's domain, where the GLPI session cookie is normally not sent (modern browsers block
   third-party cookies in iframes). That's why these endpoints are public
-  (`Firewall::STRATEGY_NO_CHECK` + `SessionManager::registerPluginStatelessPath`), but protected by
-  an automatically generated **unique integration token** — and every query checks again that the
-  requested data (ticket, document, photo) really belongs to the person identified in that specific
-  conversation, never a free search for any data in the system.
+  (`Firewall::STRATEGY_NO_CHECK` + `SessionManager::registerPluginStatelessPath`), but every one of
+  them is protected by the automatically generated integration token **and** a short-lived,
+  per-identity capability (minted once by `dashboard_identify.php`, valid for 5 minutes, bound to a
+  single GLPI user id). Neither the integration token nor the capability is ever carried in a URL —
+  both travel as request headers, and the panel fetches attachments/images as headers-authenticated
+  blobs instead of plain `<img src>`/`<a href>` links. Private/internal follow-ups are only exposed
+  if an administrator explicitly opts in (off by default), and the panel can optionally be restricted
+  to a chosen set of entities. The integration token can be regenerated on demand from the
+  configuration screen if it's ever suspected to have leaked. The unauthenticated endpoints also
+  throttle repeated calls per IP address.
+- Only active, non-deleted GLPI accounts can be resolved through the panel.
 - Ticket descriptions and messages are converted from HTML to plain text on the server and inserted
   via `textContent` in the browser (never `innerHTML`), avoiding any risk of reproducing HTML/script
   from old content.
 - Attachment and embedded image downloads go through a proxy that validates the document's ownership
-  (directly on the ticket, or linked to one of its follow-ups/solution) before serving any byte.
+  (directly on the ticket, or linked to one of its follow-ups/solution) before serving any byte, and
+  are always served with the same inline/attachment Content-Disposition rules GLPI core itself
+  applies (`Toolbox::getFileAsResponse()`) — never `inline` for an arbitrary, attacker-controlled
+  mime type.
+- The Chatwoot widget loader on GLPI's own pages never executes code returned by the Chatwoot API —
+  only the documented, static `sdk.js` loader is used, so it stays subject to your Content-Security-Policy.
+- Outbound requests to the Chatwoot API never follow redirects while carrying the API Access Token,
+  and are restricted to `http`/`https`.
 
 ## Architecture and file structure
 

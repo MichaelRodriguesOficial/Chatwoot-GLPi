@@ -31,8 +31,10 @@ function plugin_chatwoot_install(): bool
             `widget_type` varchar(32) NOT NULL DEFAULT 'expanded_bubble',
             `widget_launcher_title` varchar(255) NOT NULL DEFAULT '',
             `widget_dark_mode` varchar(16) NOT NULL DEFAULT 'auto',
-            `dashboard_app_token` varchar(64) NOT NULL DEFAULT '',
+            `dashboard_app_token` text DEFAULT NULL,
             `dashboard_app_id` int unsigned DEFAULT NULL,
+            `show_private_followups` tinyint NOT NULL DEFAULT '0',
+            `restrict_entities` tinyint NOT NULL DEFAULT '0',
             `date_creation` timestamp NULL DEFAULT NULL,
             `date_mod` timestamp NULL DEFAULT NULL,
             PRIMARY KEY (`id`)
@@ -45,40 +47,33 @@ function plugin_chatwoot_install(): bool
             'date_creation' => date('Y-m-d H:i:s'),
         ]);
     } else {
-        // Upgrade from a previous version (<= 2.7.0): store the official embed
-        // script returned by the Chatwoot API, so we always use its latest
-        // version (instead of rebuilding the loading logic ourselves).
-        if (!$DB->fieldExists($table, 'widget_script')) {
-            $migration->addField($table, 'widget_script', 'text', ['after' => 'hmac_token']);
-        }
+        // Upgrade path for sites coming from the 1.0.0 release (the only
+        // version ever published) to this security-hardened release.
 
-        // Upgrade from a previous version (<= 2.8.0): the Chatwoot Inbox API
-        // does not return the Widget Builder options (position, type,
-        // launcher title) — they need to be configured manually and applied
-        // on top of the auto-fetched script.
-        if (!$DB->fieldExists($table, 'widget_position')) {
-            $migration->addField($table, 'widget_position', 'string', ['value' => 'right', 'after' => 'widget_script']);
-        }
-        if (!$DB->fieldExists($table, 'widget_type')) {
-            $migration->addField($table, 'widget_type', 'string', ['value' => 'expanded_bubble', 'after' => 'widget_position']);
-        }
-        if (!$DB->fieldExists($table, 'widget_launcher_title')) {
-            $migration->addField($table, 'widget_launcher_title', 'string', ['after' => 'widget_type']);
-        }
-
-        // Upgrade from a previous version (<= 3.8.0): widget dark mode.
-        if (!$DB->fieldExists($table, 'widget_dark_mode')) {
-            $migration->addField($table, 'widget_dark_mode', 'string', ['value' => 'auto', 'after' => 'widget_launcher_title']);
-        }
-
-        // Upgrade from a previous version (<= 3.9.0): "GLPI" panel in
-        // Chatwoot's Dashboard Apps, showing the tickets of the person
-        // identified in the conversation.
-        if (!$DB->fieldExists($table, 'dashboard_app_token')) {
-            $migration->addField($table, 'dashboard_app_token', 'string', ['after' => 'widget_dark_mode']);
+        // 1.0.0 stored dashboard_app_token as a short plaintext `string`
+        // column; it now needs to hold an encrypted (and therefore longer)
+        // value, so it's widened to `text` alongside being added to
+        // ENCRYPTED_FIELDS/SECURED_FIELDS.
+        if ($DB->fieldExists($table, 'dashboard_app_token')) {
+            $migration->changeField($table, 'dashboard_app_token', 'dashboard_app_token', 'text');
+        } else {
+            $migration->addField($table, 'dashboard_app_token', 'text', ['after' => 'widget_dark_mode']);
         }
         if (!$DB->fieldExists($table, 'dashboard_app_id')) {
             $migration->addField($table, 'dashboard_app_id', 'integer', ['after' => 'dashboard_app_token']);
+        }
+
+        // Opt-in: whether internal/private follow-ups are exposed to Chatwoot
+        // agents through the Dashboard App panel. Defaults to disabled —
+        // previous versions always exposed them, which is no longer the case.
+        if (!$DB->fieldExists($table, 'show_private_followups')) {
+            $migration->addField($table, 'show_private_followups', 'bool', ['value' => 0, 'after' => 'dashboard_app_id']);
+        }
+
+        // Opt-in: whether the panel's ticket queries are restricted to the
+        // entities selected under "Who can see the widget" > Entities.
+        if (!$DB->fieldExists($table, 'restrict_entities')) {
+            $migration->addField($table, 'restrict_entities', 'bool', ['value' => 0, 'after' => 'show_private_followups']);
         }
     }
 
@@ -86,11 +81,45 @@ function plugin_chatwoot_install(): bool
 
     plugin_chatwoot_create_targets_table();
 
+    plugin_chatwoot_create_access_log_table();
+
     plugin_chatwoot_register_crontask();
 
     $migration->executeMigration();
 
     return true;
+}
+
+/**
+ * Lightweight access log for the unauthenticated Dashboard App endpoints —
+ * used both to throttle identity-resolution attempts (dashboard_identify.php)
+ * and to give administrators an audit trail of who was looked up and from
+ * where, since these endpoints have no GLPI session to log against.
+ * Rows older than a few hours are pruned opportunistically (see
+ * Config::pruneAccessLog()), so this table never grows unbounded.
+ */
+function plugin_chatwoot_create_access_log_table(): void
+{
+    global $DB;
+
+    $table = 'glpi_plugin_chatwoot_access_log';
+    if ($DB->tableExists($table)) {
+        return;
+    }
+
+    $default_charset   = DBConnection::getDefaultCharset();
+    $default_collation = DBConnection::getDefaultCollation();
+
+    $query = "CREATE TABLE `$table` (
+        `id` int unsigned NOT NULL AUTO_INCREMENT,
+        `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        `ip` varchar(45) NOT NULL DEFAULT '',
+        `context` varchar(32) NOT NULL DEFAULT '',
+        `matched` tinyint NOT NULL DEFAULT '0',
+        PRIMARY KEY (`id`),
+        KEY `ip_created` (`ip`, `created_at`)
+    ) ENGINE=InnoDB DEFAULT CHARSET={$default_charset} COLLATE={$default_collation} ROW_FORMAT=DYNAMIC";
+    $DB->doQuery($query);
 }
 
 /**
@@ -205,6 +234,10 @@ function plugin_chatwoot_uninstall(): bool
 
     if ($DB->tableExists('glpi_plugin_chatwoot_targets')) {
         $DB->doQuery('DROP TABLE `glpi_plugin_chatwoot_targets`');
+    }
+
+    if ($DB->tableExists('glpi_plugin_chatwoot_access_log')) {
+        $DB->doQuery('DROP TABLE `glpi_plugin_chatwoot_access_log`');
     }
 
     // Clean up any leftovers from versions <= 1.0.0.

@@ -1,6 +1,7 @@
 (function () {
     var body = document.body;
     var token = body.dataset.token || '';
+    var expectedOrigin = body.dataset.chatwootOrigin || '';
 
     var listViewEl = document.getElementById('cw-list-view');
     var detailViewEl = document.getElementById('cw-detail-view');
@@ -12,6 +13,77 @@
     var currentIdentifier = null;
     var currentPhone = null;
     var requestSeq = 0;
+
+    // --- Identity / capability --------------------------------------------
+    // The panel never sends a raw identifier/phone to the ticket endpoints.
+    // It first exchanges them (once) for a short-lived capability via
+    // dashboard_identify.php, then uses that capability — as a request
+    // header, never a URL parameter — on every subsequent call. See
+    // Config::mintCapability()/verifyCapability() for why this replaces the
+    // pre-1.0.1 "trust whatever identifier the client sends" model (HIGH 1
+    // of the 1.0.0 security review).
+    var capability = null;
+    var capabilityExpiresAt = 0;
+    var identifyInFlight = null;
+
+    function identify() {
+        if (!currentIdentifier && !currentPhone) {
+            return Promise.resolve(false);
+        }
+        if (identifyInFlight) {
+            return identifyInFlight;
+        }
+
+        var params = new URLSearchParams();
+        params.set('identifier', currentIdentifier || '');
+        params.set('phone', currentPhone || '');
+
+        identifyInFlight = fetch('/plugins/chatwoot/dashboard_app/dashboard_identify.php', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'X-Chatwoot-Panel-Token': token
+            },
+            body: params.toString()
+        })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                identifyInFlight = null;
+                if (!data || !data.found) {
+                    capability = null;
+                    capabilityExpiresAt = 0;
+                    return false;
+                }
+                capability = data.capability;
+                // Refresh a little before actual expiry so a request never
+                // races the capability's own TTL.
+                capabilityExpiresAt = Date.now() + Math.max(0, ((data.expires_in || 300) - 20)) * 1000;
+                subtitleEl.textContent = data.user_name || currentIdentifier;
+                return true;
+            })
+            .catch(function () {
+                identifyInFlight = null;
+                capability = null;
+                capabilityExpiresAt = 0;
+                return false;
+            });
+
+        return identifyInFlight;
+    }
+
+    function withCapability() {
+        if (capability && Date.now() < capabilityExpiresAt) {
+            return Promise.resolve(true);
+        }
+        return identify();
+    }
+
+    function authHeaders() {
+        return {
+            'X-Chatwoot-Panel-Token': token,
+            'X-Chatwoot-Capability': capability || ''
+        };
+    }
 
     // --- i18n -----------------------------------------------------------
     // Language is 100% automatic, driven only by the Chatwoot account's own
@@ -130,32 +202,38 @@
         if (!currentIdentifier && !currentPhone) return;
 
         var seq = ++requestSeq;
-        var params = new URLSearchParams();
-        params.set('t', token);
-        params.set('identifier', currentIdentifier || '');
-        params.set('phone', currentPhone || '');
-        params.set('q', searchEl.value.trim());
-        params.set('status', statusEl.value);
-        params.set('lang', currentLocale);
-
         listEl.innerHTML = '<div class="cw-empty">' + esc(t('loading')) + '</div>';
         countEl.style.display = 'none';
 
-        fetch('/plugins/chatwoot/dashboard_app/dashboard_tickets.php?' + params.toString())
-            .then(function (r) { return r.json(); })
-            .then(function (data) {
-                if (seq !== requestSeq) return; // stale response, ignore
-                if (!data.user_found) {
-                    listEl.innerHTML = '<div class="cw-empty">' + esc(t('user_not_found')) + '</div>';
-                    return;
-                }
-                subtitleEl.textContent = data.user_name || currentIdentifier;
-                renderTickets(data.tickets || []);
+        withCapability().then(function (ok) {
+            if (seq !== requestSeq) return;
+            if (!ok) {
+                listEl.innerHTML = '<div class="cw-empty">' + esc(t('user_not_found')) + '</div>';
+                return;
+            }
+
+            var params = new URLSearchParams();
+            params.set('q', searchEl.value.trim());
+            params.set('status', statusEl.value);
+            params.set('lang', currentLocale);
+
+            fetch('/plugins/chatwoot/dashboard_app/dashboard_tickets.php?' + params.toString(), {
+                headers: authHeaders()
             })
-            .catch(function () {
-                if (seq !== requestSeq) return;
-                listEl.innerHTML = '<div class="cw-error">' + esc(t('error_fetch')) + '</div>';
-            });
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    if (seq !== requestSeq) return; // stale response, ignore
+                    if (!data.user_found) {
+                        listEl.innerHTML = '<div class="cw-empty">' + esc(t('user_not_found')) + '</div>';
+                        return;
+                    }
+                    renderTickets(data.tickets || []);
+                })
+                .catch(function () {
+                    if (seq !== requestSeq) return;
+                    listEl.innerHTML = '<div class="cw-error">' + esc(t('error_fetch')) + '</div>';
+                });
+        });
     }
 
     function backButtonHtml() {
@@ -163,31 +241,44 @@
     }
 
     function showDetail(ticketId) {
+        // Release the previous ticket's blob URLs — otherwise an agent
+        // browsing many tickets in one session would leak memory, since
+        // object URLs are never garbage-collected on their own.
+        objectUrls.forEach(function (url) { URL.revokeObjectURL(url); });
+        objectUrls = [];
+
         listViewEl.style.display = 'none';
         detailViewEl.style.display = 'block';
         detailViewEl.innerHTML = '<div class="cw-empty">' + esc(t('loading')) + '</div>';
 
-        var params = new URLSearchParams();
-        params.set('t', token);
-        params.set('identifier', currentIdentifier || '');
-        params.set('phone', currentPhone || '');
-        params.set('ticket_id', ticketId);
-        params.set('lang', currentLocale);
-
-        fetch('/plugins/chatwoot/dashboard_app/dashboard_ticket_detail.php?' + params.toString())
-            .then(function (r) { return r.json(); })
-            .then(function (data) {
-                if (!data.found) {
-                    detailViewEl.innerHTML = backButtonHtml() + '<div class="cw-error">' + esc(t('could_not_load')) + '</div>';
-                    bindBack();
-                    return;
-                }
-                renderDetail(data.ticket);
-            })
-            .catch(function () {
-                detailViewEl.innerHTML = backButtonHtml() + '<div class="cw-error">' + esc(t('error_loading')) + '</div>';
+        withCapability().then(function (ok) {
+            if (!ok) {
+                detailViewEl.innerHTML = backButtonHtml() + '<div class="cw-error">' + esc(t('could_not_load')) + '</div>';
                 bindBack();
-            });
+                return;
+            }
+
+            var params = new URLSearchParams();
+            params.set('ticket_id', ticketId);
+            params.set('lang', currentLocale);
+
+            fetch('/plugins/chatwoot/dashboard_app/dashboard_ticket_detail.php?' + params.toString(), {
+                headers: authHeaders()
+            })
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    if (!data.found) {
+                        detailViewEl.innerHTML = backButtonHtml() + '<div class="cw-error">' + esc(t('could_not_load')) + '</div>';
+                        bindBack();
+                        return;
+                    }
+                    renderDetail(data.ticket);
+                })
+                .catch(function () {
+                    detailViewEl.innerHTML = backButtonHtml() + '<div class="cw-error">' + esc(t('error_loading')) + '</div>';
+                    bindBack();
+                });
+        });
     }
 
     function renderDetail(ticket) {
@@ -227,24 +318,37 @@
         link.className = 'cw-external';
         link.href = ticket.url;
         link.target = '_blank';
-        link.rel = 'noopener';
+        // noreferrer (not just noopener) — noopener alone still leaks this
+        // page's URL via the Referer header on same-origin navigations
+        // (MEDIUM 3 of the 1.0.0 security review).
+        link.rel = 'noreferrer noopener';
         link.innerHTML = esc(t('open_in_glpi')) + ' &#8599;';
         detailViewEl.appendChild(link);
 
         bindBack();
     }
 
-    // Builds the document proxy URL (embedded image or attachment). The
-    // server confirms again, on every call, that this document really
-    // belongs to this ticket before serving any byte.
-    function docUrl(ticketId, docId) {
+    // Fetches a document (embedded image or attachment) with the token and
+    // capability as headers — never as URL parameters — and hands back an
+    // object URL. The document proxy re-confirms, on every call, that this
+    // document really belongs to this ticket before serving any byte.
+    var objectUrls = [];
+    function fetchDocument(ticketId, docId) {
         var params = new URLSearchParams();
-        params.set('t', token);
-        params.set('identifier', currentIdentifier || '');
-        params.set('phone', currentPhone || '');
         params.set('ticket_id', ticketId);
         params.set('doc', docId);
-        return '/plugins/chatwoot/dashboard_app/dashboard_document.php?' + params.toString();
+
+        return fetch('/plugins/chatwoot/dashboard_app/dashboard_document.php?' + params.toString(), {
+            headers: authHeaders()
+        })
+            .then(function (r) { return r.ok ? r.blob() : null; })
+            .then(function (blob) {
+                if (!blob) return null;
+                var url = URL.createObjectURL(blob);
+                objectUrls.push(url);
+                return url;
+            })
+            .catch(function () { return null; });
     }
 
     function imageGallery(ids, ticketId) {
@@ -255,8 +359,14 @@
             var img = document.createElement('img');
             img.className = 'cw-image-thumb';
             img.loading = 'lazy';
-            img.src = docUrl(ticketId, id);
-            img.addEventListener('click', function () { window.open(img.src, '_blank'); });
+            withCapability().then(function (ok) {
+                if (!ok) return;
+                fetchDocument(ticketId, id).then(function (url) {
+                    if (!url) return;
+                    img.src = url;
+                    img.addEventListener('click', function () { window.open(url, '_blank', 'noopener,noreferrer'); });
+                });
+            });
             wrap.appendChild(img);
         });
         return wrap;
@@ -369,10 +479,18 @@
 
             var name = document.createElement('a');
             name.className = 'cw-attachment-link';
-            name.href = docUrl(ticketId, f.id);
-            name.target = '_blank';
-            name.rel = 'noopener';
+            name.href = '#';
+            name.rel = 'noreferrer noopener';
             name.textContent = f.name;
+            name.addEventListener('click', function (ev) {
+                ev.preventDefault();
+                withCapability().then(function (ok) {
+                    if (!ok) return;
+                    fetchDocument(ticketId, f.id).then(function (url) {
+                        if (url) window.open(url, '_blank', 'noopener,noreferrer');
+                    });
+                });
+            });
             row.appendChild(name);
 
             if (f.size) {
@@ -400,6 +518,14 @@
     statusEl.addEventListener('change', fetchTickets);
 
     window.addEventListener('message', function (event) {
+        // Only Chatwoot's own configured origin may drive this panel — a
+        // frame from any other site posting a fabricated identifier could
+        // otherwise switch the agent's view to an arbitrary person's tickets
+        // (LOW 6 of the 1.0.0 security review).
+        if (expectedOrigin && event.origin !== expectedOrigin) {
+            return;
+        }
+
         var data = event.data;
         if (typeof data === 'string') {
             try { data = JSON.parse(data); } catch (e) { return; }
@@ -417,6 +543,8 @@
         if (identifier && identifier !== currentIdentifier) {
             currentIdentifier = identifier;
             currentPhone = findPhone(data) || currentPhone;
+            capability = null;
+            capabilityExpiresAt = 0;
             subtitleEl.textContent = identifier;
             searchEl.disabled = false;
             statusEl.disabled = false;
@@ -424,6 +552,9 @@
         }
     });
 
-    // Asks Chatwoot to send the current conversation/contact data.
-    window.parent.postMessage('chatwoot-dashboard-app:fetch-info', '*');
+    // Asks Chatwoot to send the current conversation/contact data — posted
+    // only to the configured Chatwoot origin once known, falling back to
+    // '*' only while that origin hasn't been resolved yet (e.g. a
+    // just-installed site with no base_url saved).
+    window.parent.postMessage('chatwoot-dashboard-app:fetch-info', expectedOrigin || '*');
 })();
