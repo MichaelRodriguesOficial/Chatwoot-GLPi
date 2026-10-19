@@ -16,6 +16,7 @@
   <img src="https://img.shields.io/badge/PHP-8.1%2B-777bb4" alt="PHP 8.1+">
   <img src="https://img.shields.io/badge/i18n-en__GB%20%C2%B7%20en__US%20%C2%B7%20pt__BR-informational" alt="Languages">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPLv3%2B-blue" alt="License"></a>
+  <a href="https://github.com/sponsors/MichaelRodriguesOficial"><img src="https://img.shields.io/badge/sponsor-%E2%9D%A4-db61a2?logo=githubsponsors" alt="Sponsor"></a>
 </p>
 
 <p align="center">
@@ -327,27 +328,43 @@ to throttle identity lookups).
 
 ## ☕ Support the project
 
+**Enjoying the plugin?** It's an independent, open-source project, built and maintained with care
+so that GLPI and Chatwoot teams can work together without switching screens. If it saves your team
+time, you can buy me a coffee: it helps keep the plugin up to date with new GLPI and Chatwoot
+versions. It's completely optional. A ⭐ on the repository, a bug report, an idea or a pull request
+help just as much.
+
+**Curtiu o plugin?** É um projeto independente e de código aberto. Se ele facilita o dia a dia da sua
+equipe, você pode me pagar um café 💚. Isso ajuda a manter o plugin atualizado com as novas versões
+do GLPI e do Chatwoot. É totalmente opcional: uma ⭐ no repositório, um relato de bug, uma ideia ou
+um PR ajudam tanto quanto.
+
 <table>
 <tr>
-<td valign="top">
+<th width="50%">🌎 From anywhere</th>
+<th width="50%">🇧🇷 Do Brasil, via Pix</th>
+</tr>
+<tr>
+<td align="center" valign="middle">
 
-**Enjoying the plugin?** It's an independent, open-source project, built and maintained with care
-so that GLPI and Chatwoot teams can work together without switching screens.
+<a href="https://github.com/sponsors/MichaelRodriguesOficial"><img src="https://img.shields.io/badge/Sponsor%20on%20GitHub-%E2%9D%A4-db61a2?style=for-the-badge&logo=githubsponsors&logoColor=white" alt="Sponsor on GitHub"></a>
 
-If it saves your team time, you can buy me a coffee. It helps keep the plugin up to date with new
-GLPI and Chatwoot versions. It's completely optional: a ⭐ on the repository, a bug report, an idea
-or a pull request help just as much.
-
-**Curtiu o plugin?** É um projeto independente e de código aberto. Se ele facilita o dia a dia da
-sua equipe, você pode me pagar um café via Pix 💚. Isso ajuda a manter o plugin atualizado com as
-novas versões do GLPI e do Chatwoot. É totalmente opcional: uma ⭐ no repositório, um relato de bug,
-uma ideia ou um PR ajudam tanto quanto.
+<sub>One-time or monthly, any amount.<br>GitHub charges no fees on personal sponsorships.</sub>
 
 </td>
-<td width="220" align="center" valign="top">
+<td align="center" valign="middle">
 
-<img src="docs/pix-qrcode.png" alt="Pix QR code" width="200"><br>
-<sub>☕ Pix: scan with your bank app</sub>
+<img src="docs/pix-qrcode.png" alt="QR code Pix" width="180"><br>
+<sub>Aponte a câmera do app do seu banco</sub>
+
+<details>
+<summary><sub>Pix copia e cola</sub></summary>
+
+```
+00020126980014br.gov.bcb.pix01363d43ffaa-4b56-45ed-b038-ba7407c0a9750236Cafe para o plugin Chatwoot for GLPI5204000053039865802BR5917MICHAEL RODRIGUES6009SAO PAULO62070503***63040513
+```
+
+</details>
 
 </td>
 </tr>
