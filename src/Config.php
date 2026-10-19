@@ -34,6 +34,34 @@ class Config extends CommonDBTM
     private const ACCESS_LOG_WINDOW_SECONDS = 60;
     private const ACCESS_LOG_MAX_PER_WINDOW = 60;
 
+    /**
+     * Records an unexpected failure in GLPI's own php-errors log
+     * (files/_log/php-errors.log) without interrupting the request — used by
+     * every graceful-degradation path, so a missing list or label always
+     * leaves a trace instead of failing silently. Toolbox::logInFile() rather
+     * than trigger_error(): in debug mode GLPI 11's error handler may turn a
+     * warning into an exception, which would defeat the fallback itself.
+     */
+    public static function logError(string $where, \Throwable $e): void
+    {
+        $message = sprintf(
+            "[chatwoot] %s: %s (%s:%d)\n",
+            $where,
+            $e->getMessage(),
+            basename($e->getFile()),
+            $e->getLine()
+        );
+        try {
+            if (class_exists('\\Toolbox') && method_exists('\\Toolbox', 'logInFile')) {
+                \Toolbox::logInFile('php-errors', $message);
+                return;
+            }
+        } catch (\Throwable $ignored) {
+            // Fall through to PHP's own log below.
+        }
+        error_log(rtrim($message));
+    }
+
     public static function getTable($classname = null): string
     {
         return 'glpi_plugin_chatwoot_configs';
@@ -115,6 +143,7 @@ class Config extends CommonDBTM
             // Best effort — if this fails for any reason (missing intl
             // extension, unexpected environment, etc.), labels just stay in
             // GLPI's default system language, same as before this existed.
+            self::logError('Switching the request language failed', $e);
         }
     }
 
@@ -524,6 +553,9 @@ class Config extends CommonDBTM
         try {
             $decrypted = (new GLPIKey())->decrypt($token);
         } catch (\Throwable $e) {
+            // Not logged on purpose: an invalid or forged token is expected
+            // input on a public endpoint, and logging it would let anyone
+            // flood the log.
             return null;
         }
         $payload = json_decode((string) $decrypted, true);
@@ -577,6 +609,9 @@ class Config extends CommonDBTM
         try {
             $decrypted = $glpikey->decrypt(rawurldecode($capability));
         } catch (\Throwable $e) {
+            // Not logged on purpose: an invalid or forged token is expected
+            // input on a public endpoint, and logging it would let anyone
+            // flood the log.
             return null;
         }
 
@@ -1318,6 +1353,7 @@ class Config extends CommonDBTM
                 // Schema different than expected on this installation: no
                 // follow-ups in the timeline, but the rest of the ticket
                 // keeps working normally.
+                self::logError('Loading the ticket follow-ups failed', $e);
             }
         }
 
@@ -1364,6 +1400,7 @@ class Config extends CommonDBTM
             } catch (\Throwable $e) {
                 // Same as above: no solution in the timeline, rest of the
                 // ticket keeps working fine.
+                self::logError('Loading the ticket solution failed', $e);
             }
         }
 
@@ -1491,9 +1528,9 @@ class Config extends CommonDBTM
         } catch (\Throwable $e) {
             // Schema different than expected on this installation: no
             // attachments list, but the rest of the ticket keeps working
-            // normally — logged (files/_log/php-errors.log) instead of being
-            // swallowed silently, so the cause can actually be found.
-            trigger_error('[chatwoot] Ticket attachments list failed: ' . $e->getMessage(), E_USER_WARNING);
+            // normally — logged instead of being swallowed silently, so the
+            // cause can actually be found.
+            self::logError('Loading the ticket attachments failed', $e);
         }
 
         return $attachments;

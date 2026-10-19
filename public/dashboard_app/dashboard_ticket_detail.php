@@ -42,6 +42,7 @@ if (!$user) {
 try {
     $ticket = ChatwootConfig::getTicketDetailForUser((int) $user['id'], $ticket_id);
 } catch (\Throwable $e) {
+    ChatwootConfig::logError('Ticket detail endpoint failed', $e);
     http_response_code(500);
     echo json_encode(['found' => false, 'error' => 'internal_error']);
     return;

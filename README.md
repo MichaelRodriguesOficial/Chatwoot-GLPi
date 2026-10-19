@@ -52,6 +52,7 @@ Chatwoot itself showing the tickets of the person you're chatting with — no ne
 - [The "GLPI" panel inside Chatwoot](#the-glpi-panel-inside-chatwoot)
 - [Security](#security)
 - [Architecture and file structure](#architecture-and-file-structure)
+- [Development and tests](#development-and-tests)
 - [License](#license)
 
 ## What the plugin does
@@ -273,6 +274,8 @@ chatwoot/
 ├── locales/                        GLPI-side gettext translations: chatwoot.pot, en_GB/en_US/pt_BR .po/.mo
 ├── logo.png                        Plugin logo (GLPI's plugin list reads it from the plugin root)
 ├── screenshots/                    Images used in the "Screenshots" section above
+├── tests/                          PHPUnit suite for the security logic (not shipped in the release zip)
+├── .github/workflows/ci.yml        CI: lint + sanity check + PHPUnit on PHP 8.1–8.4
 ├── LICENSE
 ├── CHANGELOG.md
 └── README.md
@@ -281,7 +284,29 @@ chatwoot/
 </details>
 
 The `glpi_plugin_chatwoot_configs` table stores the configuration; `glpi_plugin_chatwoot_targets`
-stores the permissions (profiles/groups/users authorized to see the widget).
+stores the permissions (profiles/groups/users authorized to see the widget) and the entities the
+panel is restricted to; `glpi_plugin_chatwoot_access_log` is the short rolling log used to throttle
+identity lookups.
+
+## Development and tests
+
+The security-relevant logic has a PHPUnit suite under `tests/`, run by CI on PHP 8.1 to 8.4:
+
+- capabilities: bound to one user, expire, re-check that the account is active and not deleted;
+- per-document links: bound to user + ticket + document, expire, reject tampering and capabilities;
+- document serving: GLPI core's inline allow-list (images except SVG, PDF), real upload names;
+- attachments list: only the ticket and the follow-ups/solution actually shown are queried;
+- Chatwoot URL validation, and the 1.0.0 → 1.0.1 token encryption migration.
+
+```bash
+composer install
+vendor/bin/phpunit
+```
+
+A small stand-in for the few GLPI core classes involved (`tests/bootstrap.php`) lets the suite run
+without a GLPI installation; `GLPIKey` there uses the same XChaCha20-Poly1305 scheme as GLPI's, so
+tokens are exercised with real authenticated encryption. Unexpected failures in the plugin's
+graceful-degradation paths are written to GLPI's `files/_log/php-errors.log`.
 
 ## License
 

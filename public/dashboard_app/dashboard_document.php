@@ -37,6 +37,7 @@ if ($link === null) {
 try {
     $file = ChatwootConfig::streamTicketDocumentForUser($link['uid'], $link['tid'], $link['did']);
 } catch (\Throwable $e) {
+    ChatwootConfig::logError('Document endpoint failed', $e);
     http_response_code(500);
     return;
 }

@@ -26,6 +26,7 @@ $glpikey = new GLPIKey();
 try {
     $user_id = (int) $glpikey->decrypt(rawurldecode($token));
 } catch (\Throwable $e) {
+    // Not logged on purpose: a forged/invalid token is expected input here.
     http_response_code(404);
     return;
 }

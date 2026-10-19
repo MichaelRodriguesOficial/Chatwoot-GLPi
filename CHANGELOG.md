@@ -77,6 +77,12 @@ security review of 1.0.0.
   cached script against newer server endpoints after the plugin files are replaced.
 - The plugin logo now lives at the plugin root (`logo.png`), where GLPI's plugin list looks for it,
   so the list shows the Chatwoot logo instead of a generic "C" placeholder.
+- Unexpected failures (timeline, solution, attachments, language switch, ticket/document endpoints)
+  are now written to GLPI's `files/_log/php-errors.log` instead of being swallowed silently.
+  Invalid/forged tokens on the public endpoints stay unlogged on purpose, so they can't be used to
+  flood the log.
+- PHPUnit suite for the security logic (`tests/`) and a CI workflow running lint, the sanity check
+  and the tests on PHP 8.1–8.4. Neither is shipped in the release zip.
 
 ## 1.0.0 — Initial release
 
