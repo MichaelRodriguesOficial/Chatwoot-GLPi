@@ -84,17 +84,24 @@ $dicts_json = json_encode(
     JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP
 );
 
-// Cache-busting: forces the browser to fetch a fresh copy of the CSS/JS
-// whenever the plugin version changes, instead of possibly serving a stale
-// cached copy from before an update.
-$asset_version = defined('PLUGIN_CHATWOOT_VERSION') ? PLUGIN_CHATWOOT_VERSION : (string) time();
+// Cache-busting by CONTENT, not just by plugin version: the URL of each
+// asset changes whenever the file itself changes, so a browser (or proxy)
+// can never keep running an old dashboard_app.js against newer server-side
+// endpoints — which is exactly what happens if files are replaced without
+// a version bump.
+function chatwoot_dashboard_asset_version(string $relative_path): string
+{
+    $hash = @md5_file(__DIR__ . '/' . $relative_path);
+    $base = defined('PLUGIN_CHATWOOT_VERSION') ? PLUGIN_CHATWOOT_VERSION : '0';
+    return $hash !== false ? $base . '-' . substr($hash, 0, 10) : $base . '-' . time();
+}
 ?>
 <!DOCTYPE html>
 <html lang="<?php echo $locale === 'pt_BR' ? 'pt-BR' : 'en'; ?>">
 <head>
 <meta charset="UTF-8">
 <title>Tickets - GLPI</title>
-<link rel="stylesheet" href="css/dashboard_app.css?v=<?php echo urlencode($asset_version); ?>">
+<link rel="stylesheet" href="css/dashboard_app.css?v=<?php echo urlencode(chatwoot_dashboard_asset_version('css/dashboard_app.css')); ?>">
 </head>
 <body data-token="<?php echo htmlspecialchars($token, ENT_QUOTES); ?>" data-locale="<?php echo htmlspecialchars($locale, ENT_QUOTES); ?>" data-chatwoot-origin="<?php echo htmlspecialchars($chatwoot_origin, ENT_QUOTES); ?>">
 
@@ -123,7 +130,7 @@ $asset_version = defined('PLUGIN_CHATWOOT_VERSION') ? PLUGIN_CHATWOOT_VERSION : 
 <div id="cw-detail-view" style="display:none;"></div>
 
 <script>window.__cwDictionaries = <?php echo $dicts_json; ?>;</script>
-<script src="js/dashboard_app.js?v=<?php echo urlencode($asset_version); ?>"></script>
+<script src="js/dashboard_app.js?v=<?php echo urlencode(chatwoot_dashboard_asset_version('js/dashboard_app.js')); ?>"></script>
 
 <?php endif; ?>
 </body>

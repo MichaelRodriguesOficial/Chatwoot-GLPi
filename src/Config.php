@@ -1473,7 +1473,7 @@ class Config extends CommonDBTM
                 }
                 $seen[$doc_id] = count($attachments);
 
-                $name = self::completeFileExtension(
+                $name = self::documentDisplayName(
                     trim((string) ($drow['name'] ?? '')),
                     trim((string) ($drow['filename'] ?? ''))
                 );
@@ -1648,7 +1648,7 @@ class Config extends CommonDBTM
         }
         $path = $resolved_path;
 
-        $name = self::completeFileExtension(
+        $name = self::documentDisplayName(
             trim((string) ($doc['name'] ?? '')),
             trim((string) ($doc['filename'] ?? ''))
         );
@@ -1718,21 +1718,18 @@ class Config extends CommonDBTM
     }
 
     /**
-     * GLPI's "name" field is an editable title and doesn't always include
-     * the file extension — completes it from the real filename (the stored
-     * physical name), if it doesn't have one yet. Used both in the
-     * attachments listing and in the actual download, so the two never diverge.
+     * The name to show and to download a document under — the same one GLPI's
+     * own timeline shows: `filename`, the original name of the uploaded file.
+     * GLPI fills `name` with an auto-generated title for files uploaded through
+     * a ticket or follow-up ("Document Ticket 521515" / "Documento do Chamado
+     * 521515"), so `name` is only a fallback, completed with the extension.
+     * (The physical file on disk is `filepath`, never shown.) Used both in the
+     * attachments list and in the actual download, so the two never diverge.
      */
-    private static function completeFileExtension(string $name, string $filename): string
+    private static function documentDisplayName(string $name, string $filename): string
     {
-        if ($name === '') {
-            return $filename;
-        }
         if ($filename !== '') {
-            $ext = pathinfo($filename, PATHINFO_EXTENSION);
-            if ($ext !== '' && !preg_match('/\.' . preg_quote($ext, '/') . '$/i', $name)) {
-                $name .= '.' . $ext;
-            }
+            return $filename;
         }
         return $name;
     }

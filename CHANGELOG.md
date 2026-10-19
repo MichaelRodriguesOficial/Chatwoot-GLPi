@@ -71,6 +71,10 @@ security review of 1.0.0.
   follow-up shows its own files right under it, and the "Attachments" section lists them all. Files
   of a private follow-up follow the same visibility rule as the follow-up itself, both in the list
   and in the download endpoint.
+- Attachments are listed and downloaded under their real upload name (GLPI's `filename`, the same
+  one GLPI's own timeline shows) instead of GLPI's auto-generated title ("Document Ticket 123").
+- The panel's CSS/JS URLs are versioned by file content, so a browser can never keep running a
+  cached script against newer server endpoints after the plugin files are replaced.
 
 ## 1.0.0 — Initial release
 
