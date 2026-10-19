@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="pics/logo.png" alt="Chatwoot for GLPI" width="96">
+  <img src="logo.png" alt="Chatwoot" width="96">
 </p>
 
 <h1 align="center">Chatwoot for GLPI</h1>
@@ -265,13 +265,13 @@ chatwoot/
 │       ├── dashboard_app.php       HTML shell (resolves the account's Chatwoot language server-side)
 │       ├── css/dashboard_app.css   Panel styles
 │       ├── js/dashboard_app.js     Panel logic
+│       ├── dashboard_identify.php      Resolves the conversation's contact once, returns a short-lived capability
 │       ├── dashboard_tickets.php       Ticket list (JSON)
 │       ├── dashboard_ticket_detail.php Ticket detail, with timeline and attachments (JSON)
-│       ├── dashboard_document.php      Attachment/embedded image download proxy
+│       ├── dashboard_document.php      Attachment/embedded image download (per-document signed links)
 │       └── locales/                Plain JSON translations for this panel only (en.json, pt_BR.json)
 ├── locales/                        GLPI-side gettext translations: chatwoot.pot, en_GB/en_US/pt_BR .po/.mo
-├── pics/
-│   └── logo.png                    Plugin logo (marketplace catalog listing)
+├── logo.png                        Plugin logo (GLPI's plugin list reads it from the plugin root)
 ├── screenshots/                    Images used in the "Screenshots" section above
 ├── LICENSE
 ├── CHANGELOG.md

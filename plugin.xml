@@ -3,7 +3,7 @@
    <name>Chatwoot</name>
    <key>chatwoot</key>
    <state>stable</state>
-   <logo>https://raw.githubusercontent.com/MichaelRodriguesOficial/Chatwoot-GLPi/main/pics/logo.png</logo>
+   <logo>https://raw.githubusercontent.com/MichaelRodriguesOficial/Chatwoot-GLPi/main/logo.png</logo>
    <description>
       <short>
          <en>Chatwoot live chat widget for GLPI, with an in-conversation panel showing the requester's tickets.</en>

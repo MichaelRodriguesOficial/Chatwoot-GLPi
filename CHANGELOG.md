@@ -75,6 +75,8 @@ security review of 1.0.0.
   one GLPI's own timeline shows) instead of GLPI's auto-generated title ("Document Ticket 123").
 - The panel's CSS/JS URLs are versioned by file content, so a browser can never keep running a
   cached script against newer server endpoints after the plugin files are replaced.
+- The plugin logo now lives at the plugin root (`logo.png`), where GLPI's plugin list looks for it,
+  so the list shows the Chatwoot logo instead of a generic "C" placeholder.
 
 ## 1.0.0 — Initial release
 
