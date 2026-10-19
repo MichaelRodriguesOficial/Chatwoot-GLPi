@@ -21,6 +21,20 @@ namespace {
         class CommonDBTM extends CommonGLPI
         {
             public $fields = [];
+
+            /** Row returned for the plugin's single configuration record (id 1). */
+            public static array $testConfig = [];
+
+            public function getFromDB($id): bool
+            {
+                $this->fields = ['id' => 1] + static::$testConfig;
+                return true;
+            }
+
+            public function add(array $input)
+            {
+                return 1;
+            }
         }
     }
     if (!function_exists('__')) {

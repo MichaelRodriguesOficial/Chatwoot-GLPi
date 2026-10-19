@@ -42,15 +42,11 @@ class Config extends CommonDBTM
      * than trigger_error(): in debug mode GLPI 11's error handler may turn a
      * warning into an exception, which would defeat the fallback itself.
      */
-    public static function logError(string $where, \Throwable $e): void
+    public static function logError(string $where, \Throwable|string $error): void
     {
-        $message = sprintf(
-            "[chatwoot] %s: %s (%s:%d)\n",
-            $where,
-            $e->getMessage(),
-            basename($e->getFile()),
-            $e->getLine()
-        );
+        $message = $error instanceof \Throwable
+            ? sprintf("[chatwoot] %s: %s (%s:%d)\n", $where, $error->getMessage(), basename($error->getFile()), $error->getLine())
+            : sprintf("[chatwoot] %s: %s\n", $where, $error);
         try {
             if (class_exists('\\Toolbox') && method_exists('\\Toolbox', 'logInFile')) {
                 \Toolbox::logInFile('php-errors', $message);
@@ -578,12 +574,20 @@ class Config extends CommonDBTM
      * integrity in one step, so the payload can't be tampered with to swap
      * the bound user id, and it can't be read without the server's key.
      *
+     * Also carries the Chatwoot conversation it was minted for (`cid`): a
+     * capability only ever comes out of a real conversation, resolved
+     * server-side through the Chatwoot API (see resolveConversationUser()).
+     *
      * A single base64 layer: GLPIKey::encrypt() already returns base64, so —
      * unlike the pre-1.0.1 avatar token — nothing wraps it again.
      */
-    public static function mintCapability(int $user_id): string
+    public static function mintCapability(int $user_id, int $conversation_id = 0): string
     {
-        $payload = json_encode(['uid' => $user_id, 'exp' => time() + self::CAPABILITY_TTL], JSON_UNESCAPED_SLASHES);
+        $payload = json_encode([
+            'uid' => $user_id,
+            'cid' => $conversation_id,
+            'exp' => time() + self::CAPABILITY_TTL,
+        ], JSON_UNESCAPED_SLASHES);
         $glpikey = new GLPIKey();
         return rawurlencode($glpikey->encrypt($payload));
     }
@@ -867,18 +871,101 @@ class Config extends CommonDBTM
     }
 
     /**
-     * Public entry point for dashboard_identify.php: resolves a Chatwoot
-     * identifier/phone to a GLPI user — the only place in the plugin that
-     * still trusts those two values directly. Everything downstream (ticket
-     * list, ticket detail, document download) now works off the short-lived
-     * capability minted from this result, never off a raw identifier/phone
-     * sent again on every request (HIGH 1 of the 1.0.0 security review).
+     * Resolves the GLPI user behind a Chatwoot conversation — the only way
+     * the panel can obtain a capability (HIGH 1 of the 1.0.0 security review).
      *
-     * @return array{id:int, name:string, realname:string, firstname:string}|null
+     * The browser only says WHICH conversation is open; WHO the contact is
+     * comes from the Chatwoot API itself (GET /conversations/{id}, using the
+     * configured API Access Token), never from values the browser sends. The
+     * lookup is then exactly the one the panel always did: the contact's
+     * `identifier` (the GLPI login, set by this plugin's widget through
+     * setUser()) first, then its phone number (WhatsApp and other channels
+     * where the contact has no identifier) against GLPI's three phone fields.
+     *
+     * @return array{ok: bool, user?: array|null, error?: string}
      */
-    public static function resolveIdentity(string $identifier, string $phone = ''): ?array
+    public static function resolveConversationUser(int $conversation_id): array
     {
-        return self::resolveUser($identifier, $phone);
+        $contact = self::fetchConversationContact($conversation_id);
+        if (!$contact['ok']) {
+            return $contact;
+        }
+
+        return [
+            'ok'   => true,
+            'user' => self::resolveUser($contact['identifier'], $contact['phone']),
+        ];
+    }
+
+    /**
+     * @return array{ok: bool, identifier?: string, phone?: string, error?: string}
+     */
+    private static function fetchConversationContact(int $conversation_id): array
+    {
+        $config     = self::getConfig();
+        $base_url   = rtrim((string) ($config['base_url'] ?? ''), '/');
+        $api_key    = (string) ($config['api_key'] ?? '');
+        $account_id = (string) ($config['account_id'] ?? '');
+
+        if ($conversation_id <= 0) {
+            return ['ok' => false, 'error' => 'invalid_conversation'];
+        }
+        if (!self::isValidBaseUrl($base_url) || $api_key === '' || $account_id === '') {
+            return ['ok' => false, 'error' => 'not_configured'];
+        }
+
+        $ch = curl_init($base_url . '/api/v1/accounts/' . rawurlencode($account_id) . '/conversations/' . $conversation_id);
+        curl_setopt_array($ch, self::curlSecurityOptions() + [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_FOLLOWLOCATION => false,
+            CURLOPT_CONNECTTIMEOUT => 4,
+            CURLOPT_TIMEOUT        => 6,
+            CURLOPT_HTTPHEADER     => ['api_access_token: ' . $api_key, 'Accept: application/json'],
+        ]);
+        $body      = curl_exec($ch);
+        $http_code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curl_err  = curl_error($ch);
+        curl_close($ch);
+
+        if ($http_code === 404) {
+            // Not in this account, or not visible to the API token's agent.
+            return ['ok' => false, 'error' => 'conversation_not_found'];
+        }
+        if ($http_code !== 200) {
+            self::logError(
+                'Chatwoot API: fetching conversation ' . $conversation_id . ' failed',
+                $curl_err !== '' ? $curl_err : 'HTTP ' . $http_code
+            );
+            return ['ok' => false, 'error' => 'chatwoot_unreachable'];
+        }
+
+        $data = json_decode((string) $body, true);
+        if (!is_array($data)) {
+            self::logError('Chatwoot API: unexpected conversation response', 'not JSON');
+            return ['ok' => false, 'error' => 'chatwoot_unreachable'];
+        }
+
+        return ['ok' => true] + self::extractConversationContact($data);
+    }
+
+    /**
+     * Pulls the contact's identifier and phone out of a Chatwoot conversation
+     * payload: `meta.sender` is the conversation's contact (`contact` is
+     * accepted too, for payload variants).
+     *
+     * @return array{identifier: string, phone: string}
+     */
+    public static function extractConversationContact(array $conversation): array
+    {
+        $sender = $conversation['meta']['sender'] ?? $conversation['contact'] ?? [];
+        if (!is_array($sender)) {
+            $sender = [];
+        }
+
+        return [
+            'identifier' => trim((string) ($sender['identifier'] ?? '')),
+            'phone'      => trim((string) ($sender['phone_number'] ?? '')),
+        ];
     }
 
     /**

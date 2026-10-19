@@ -10,21 +10,21 @@
     var subtitleEl = document.getElementById('cw-subtitle');
     var searchEl = document.getElementById('cw-search');
     var statusEl = document.getElementById('cw-status');
-    var currentIdentifier = null;
-    var currentPhone = null;
+    var currentConversationId = null;
     var requestSeq = 0;
 
     // --- Identity / capability --------------------------------------------
-    // The panel never sends a raw identifier/phone to the ticket endpoints.
-    // It first exchanges them (once) for a short-lived capability via
-    // dashboard_identify.php, then uses that capability — as a request
-    // header, never a URL parameter — on every subsequent call. See
-    // Config::mintCapability()/verifyCapability() for why this replaces the
-    // pre-1.0.1 "trust whatever identifier the client sends" model (HIGH 1
+    // The panel never tells the server WHO the contact is. It only sends the
+    // id of the Chatwoot conversation that is open; dashboard_identify.php
+    // asks the Chatwoot API who that conversation's contact is and runs the
+    // usual GLPI lookup (login first, then phone), returning a short-lived
+    // capability. That capability — as a request header, never a URL
+    // parameter — then authorizes the ticket list and detail calls (HIGH 1
     // of the 1.0.0 security review).
     var capability = null;
     var capabilityExpiresAt = 0;
     var identifyInFlight = null;
+    var identifyError = '';
     // Bumped every time the agent switches to another contact. An identify()
     // call that started for the previous contact must never store its
     // capability once the switch happened, or the panel would keep showing
@@ -39,7 +39,7 @@
     }
 
     function identify() {
-        if (!currentIdentifier && !currentPhone) {
+        if (!currentConversationId) {
             return Promise.resolve(false);
         }
         if (identifyInFlight) {
@@ -48,8 +48,7 @@
 
         var generation = identityGeneration;
         var params = new URLSearchParams();
-        params.set('identifier', currentIdentifier || '');
-        params.set('phone', currentPhone || '');
+        params.set('conversation_id', currentConversationId);
 
         identifyInFlight = fetch('/plugins/chatwoot/dashboard_app/dashboard_identify.php', {
             method: 'POST',
@@ -65,6 +64,7 @@
                     return false; // the agent already moved to another contact
                 }
                 identifyInFlight = null;
+                identifyError = (data && data.error) || '';
                 if (!data || !data.found) {
                     capability = null;
                     capabilityExpiresAt = 0;
@@ -74,7 +74,7 @@
                 // Refresh a little before actual expiry so a request never
                 // races the capability's own TTL.
                 capabilityExpiresAt = Date.now() + Math.max(0, ((data.expires_in || 300) - 20)) * 1000;
-                subtitleEl.textContent = data.user_name || currentIdentifier;
+                if (data.user_name) subtitleEl.textContent = data.user_name;
                 return true;
             })
             .catch(function () {
@@ -82,6 +82,7 @@
                     return false;
                 }
                 identifyInFlight = null;
+                identifyError = 'chatwoot_unreachable';
                 capability = null;
                 capabilityExpiresAt = 0;
                 return false;
@@ -147,32 +148,20 @@
         return div.innerHTML;
     }
 
-    // Recursively looks for any of the given keys at any level of the object
-    // received from Chatwoot — avoids relying on one fixed exact path, since
-    // the exact payload structure can vary.
-    function findValueByKeys(obj, keys, depth) {
-        depth = depth || 0;
-        if (depth > 6 || !obj || typeof obj !== 'object') return null;
-        for (var i = 0; i < keys.length; i++) {
-            if (typeof obj[keys[i]] === 'string' && obj[keys[i]]) return obj[keys[i]];
+    // Chatwoot's Dashboard App message: { event: 'appContext', data: {
+    // conversation: { id, ... }, contact: { ... }, currentAgent: { ... } } }.
+    // Only the conversation id is used for authorization; the contact's name
+    // is just shown while the server resolves who it is.
+    function appContext(msg) {
+        if (msg && msg.event === 'appContext' && msg.data && typeof msg.data === 'object') {
+            return msg.data;
         }
-        for (var key in obj) {
-            if (!Object.prototype.hasOwnProperty.call(obj, key)) continue;
-            var val = obj[key];
-            if (val && typeof val === 'object') {
-                var found = findValueByKeys(val, keys, depth + 1);
-                if (found) return found;
-            }
-        }
-        return null;
+        return msg && msg.conversation ? msg : null;
     }
 
-    function findIdentifier(obj) {
-        return findValueByKeys(obj, ['identifier']);
-    }
-
-    function findPhone(obj) {
-        return findValueByKeys(obj, ['phone_number', 'phoneNumber', 'phone']);
+    function conversationIdOf(ctx) {
+        var id = ctx && ctx.conversation ? ctx.conversation.id : null;
+        return /^[1-9][0-9]*$/.test(String(id == null ? '' : id)) ? String(id) : null;
     }
 
     function statusBadge(ticket) {
@@ -231,7 +220,7 @@
     // Always searches directly in GLPI (doesn't filter a pre-loaded list), so
     // it finds any ticket of the person, not just the most recent ones.
     function fetchTickets() {
-        if (!currentIdentifier && !currentPhone) return;
+        if (!currentConversationId) return;
 
         var seq = ++requestSeq;
         listEl.innerHTML = '<div class="cw-empty">' + esc(t('loading')) + '</div>';
@@ -240,7 +229,9 @@
         withCapability().then(function (ok) {
             if (seq !== requestSeq) return;
             if (!ok) {
-                listEl.innerHTML = '<div class="cw-empty">' + esc(t('user_not_found')) + '</div>';
+                listEl.innerHTML = identifyError === 'chatwoot_unreachable'
+                    ? '<div class="cw-error">' + esc(t('error_fetch')) + '</div>'
+                    : '<div class="cw-empty">' + esc(t('user_not_found')) + '</div>';
                 return;
             }
 
@@ -535,10 +526,10 @@
     statusEl.addEventListener('change', fetchTickets);
 
     window.addEventListener('message', function (event) {
-        // Only Chatwoot's own configured origin may drive this panel — a
-        // frame from any other site posting a fabricated identifier could
-        // otherwise switch the agent's view to an arbitrary person's tickets
-        // (LOW 6 of the 1.0.0 security review).
+        // Only Chatwoot's own configured origin may drive this panel (LOW 6
+        // of the 1.0.0 security review). Even a forged message could only
+        // point the panel at another real conversation of this Chatwoot
+        // account: the contact is always resolved server-side.
         if (expectedOrigin && event.origin !== expectedOrigin) {
             return;
         }
@@ -551,22 +542,22 @@
 
         window.__cwLastPayload = data;
 
-        var identifier = findIdentifier(data);
-        // Chatwoot sends several messages throughout the conversation (new
-        // message, status change, etc.), and the identifier shows up in
-        // practically all of them. Without this check, every single one
-        // would reload the whole list and overwrite whatever was in the
-        // search/filter.
-        if (identifier && identifier !== currentIdentifier) {
-            currentIdentifier = identifier;
-            // Never carry the previous contact's phone over: if this
-            // contact's identifier has no GLPI match, the phone fallback
-            // would otherwise resolve the PREVIOUS person.
-            currentPhone = findPhone(data) || null;
+        var ctx = appContext(data);
+        var conversationId = conversationIdOf(ctx);
+        // Chatwoot sends several messages throughout a conversation (new
+        // message, status change, etc.). Only switching to ANOTHER
+        // conversation reloads the list — otherwise every message would wipe
+        // the agent's search/filter. Contacts with only a phone number
+        // (WhatsApp) work the same as contacts with an identifier.
+        if (conversationId && conversationId !== currentConversationId) {
+            currentConversationId = conversationId;
             resetIdentity();
-            subtitleEl.textContent = identifier;
+            identifyError = '';
+            subtitleEl.textContent = (ctx.contact && ctx.contact.name) || '';
             searchEl.disabled = false;
             statusEl.disabled = false;
+            listViewEl.style.display = 'block';
+            detailViewEl.style.display = 'none';
             fetchTickets();
         }
     });

@@ -7,16 +7,22 @@ security review of 1.0.0.
 
 ### HIGH
 
-- The three Dashboard App data endpoints no longer trust a raw `identifier`/`phone` query parameter
-  as identity. A new endpoint, `dashboard_identify.php`, resolves it once and mints a short-lived
-  (5 minute) capability — authenticated-encrypted with `GLPIKey`, bound to a single GLPI user id —
-  that the ticket list, ticket detail, and document endpoints now require instead.
+- The panel no longer tells GLPI who the contact is. It only sends the id of the open Chatwoot
+  conversation; a new endpoint, `dashboard_identify.php`, fetches that conversation's contact
+  through the Chatwoot API (`GET /conversations/{id}`) and runs the same lookup as before —
+  identifier (GLPI login) first, then phone number — so the GLPI widget and WhatsApp conversations
+  keep working, but a leaked integration token can no longer be used to name an arbitrary GLPI user.
+  It mints a short-lived (5 minute) capability — authenticated-encrypted with `GLPIKey`, bound to
+  one GLPI user and one conversation — that the ticket list and detail endpoints require; documents
+  use per-document links minted with the ticket detail. Contacts with only a phone number
+  (WhatsApp) now also load the panel. The API Access Token should be an administrator's (or belong
+  to an agent who is a member of every inbox where the panel is used).
 - Internal/private follow-ups are only exposed through the panel if an administrator explicitly
   enables "Show internal/private follow-ups to Chatwoot agents" (off by default).
 - The panel's ticket queries can optionally be restricted to a chosen set of entities (selecting an
   entity also covers its sub-entities).
 - Only active, non-deleted GLPI accounts can be resolved.
-- Identity resolution (`dashboard_identify.php`, the only endpoint that still accepts a login/phone)
+- Identity resolution (`dashboard_identify.php`)
   is rate-limited per IP address, with a lightweight audit log of lookups. The ticket/detail/document
   endpoints are not throttled: they already require a capability (or a per-document link) bound to
   one user, and a single ticket view legitimately fires several image requests.

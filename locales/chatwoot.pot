@@ -8,8 +8,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: chatwoot 1.0.1\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-19 15:40+0000\n"
-"PO-Revision-Date: 2026-10-19 15:40+0000\n"
+"POT-Creation-Date: 2026-10-19 17:18+0000\n"
+"PO-Revision-Date: 2026-10-19 17:18+0000\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
 "Language: \n"
@@ -65,131 +65,131 @@ msgstr ""
 msgid "Keeps the Chatwoot Website Token and HMAC Token automatically in sync."
 msgstr ""
 
-#: src/Config.php:44
+#: src/Config.php:68
 msgid "Chatwoot"
 msgstr ""
 
-#: src/Config.php:166 front/config.form.php:72 ajax/test.php:49
+#: src/Config.php:191 front/config.form.php:72 ajax/test.php:49
 msgid "Invalid Chatwoot URL. Use the format https://your-chatwoot.com"
 msgstr ""
 
-#: src/Config.php:196
+#: src/Config.php:221
 #, php-format
 msgid "Could not connect: %s"
 msgstr ""
 
-#: src/Config.php:200
+#: src/Config.php:225
 msgid "API Access Token rejected by Chatwoot."
 msgstr ""
 
-#: src/Config.php:204
+#: src/Config.php:229
 msgid "Account ID or Inbox ID not found."
 msgstr ""
 
-#: src/Config.php:208
+#: src/Config.php:233
 #, php-format
 msgid "The Chatwoot API responded with HTTP code %d."
 msgstr ""
 
-#: src/Config.php:213
+#: src/Config.php:238
 msgid "The API response did not include a Website Token for this Inbox."
 msgstr ""
 
-#: src/Config.php:409
+#: src/Config.php:434
 msgid "Incomplete configuration."
 msgstr ""
 
-#: src/Config.php:466
+#: src/Config.php:491
 #, php-format
 msgid "HTTP %d while registering the Dashboard App."
 msgstr ""
 
-#: src/Config.php:1199 src/Config.php:1244 src/Config.php:1635
+#: src/Config.php:1425 src/Config.php:1472 src/Config.php:1905
 msgid "Unknown"
 msgstr ""
 
-#: src/Config.php:1273 src/Config.php:1277
+#: src/Config.php:1503 src/Config.php:1507
 msgid "Proposed"
 msgstr ""
 
-#: src/Config.php:1274
+#: src/Config.php:1504
 msgid "Refused"
 msgstr ""
 
-#: src/Config.php:1275
+#: src/Config.php:1505
 msgid "Accepted"
 msgstr ""
 
-#: src/Config.php:1346
+#: src/Config.php:1605
 msgid "Unnamed file"
 msgstr ""
 
-#: src/Config.php:1609
+#: src/Config.php:1879
 msgid "Very low"
 msgstr ""
 
-#: src/Config.php:1610
+#: src/Config.php:1880
 msgid "Low"
 msgstr ""
 
-#: src/Config.php:1611
+#: src/Config.php:1881
 msgid "Medium"
 msgstr ""
 
-#: src/Config.php:1612
+#: src/Config.php:1882
 msgid "High"
 msgstr ""
 
-#: src/Config.php:1613
+#: src/Config.php:1883
 msgid "Very high"
 msgstr ""
 
-#: src/Config.php:1614
+#: src/Config.php:1884
 msgid "Major"
 msgstr ""
 
-#: src/Config.php:1616
+#: src/Config.php:1886
 msgid "Not set"
 msgstr ""
 
-#: src/Config.php:1623
+#: src/Config.php:1893
 msgid "New"
 msgstr ""
 
-#: src/Config.php:1624
+#: src/Config.php:1894
 msgid "Processing (assigned)"
 msgstr ""
 
-#: src/Config.php:1625
+#: src/Config.php:1895
 msgid "Processing (planned)"
 msgstr ""
 
-#: src/Config.php:1626
+#: src/Config.php:1896
 msgid "Pending"
 msgstr ""
 
-#: src/Config.php:1627
+#: src/Config.php:1897
 msgid "Solved"
 msgstr ""
 
-#: src/Config.php:1628
+#: src/Config.php:1898
 msgid "Closed"
 msgstr ""
 
-#: src/Config.php:2067
+#: src/Config.php:2337
 msgid "Chatwoot: automatically updates the Inbox Website Token and HMAC Token"
 msgstr ""
 
-#: src/Config.php:2092
+#: src/Config.php:2362
 msgid "Incomplete or disabled configuration: nothing to update."
 msgstr ""
 
-#: src/Config.php:2104
+#: src/Config.php:2374
 #, php-format
 msgid "Failed to update: %s"
 msgstr ""
 
-#: src/Config.php:2117
+#: src/Config.php:2387
 msgid "Website Token/HMAC Token successfully updated."
 msgstr ""
 
@@ -225,142 +225,146 @@ msgstr ""
 msgid "Agent profile > Profile settings > \"Access Token\". Never re-displayed once saved — leave blank to keep the current value."
 msgstr ""
 
-#: templates/config.html.twig:46 front/config.form.php:44
+#: templates/config.html.twig:41
+msgid "Use an administrator's token (or one from an agent who is a member of every inbox where the GLPI panel is used, e.g. the website widget and WhatsApp): the panel identifies each conversation's contact through it."
+msgstr ""
+
+#: templates/config.html.twig:47 front/config.form.php:44
 msgid "Account ID"
 msgstr ""
 
-#: templates/config.html.twig:52 front/config.form.php:45
+#: templates/config.html.twig:53 front/config.form.php:45
 msgid "Inbox ID"
 msgstr ""
 
-#: templates/config.html.twig:60
+#: templates/config.html.twig:61
 msgid "Widget customization"
 msgstr ""
 
-#: templates/config.html.twig:63
+#: templates/config.html.twig:64
 msgid "The Chatwoot API does not return the Widget Builder options (position, type, launcher title) — configure them here to apply them on top of the automatically fetched script."
 msgstr ""
 
-#: templates/config.html.twig:69
+#: templates/config.html.twig:70
 msgid "Position"
 msgstr ""
 
-#: templates/config.html.twig:71
+#: templates/config.html.twig:72
 msgid "Right"
 msgstr ""
 
-#: templates/config.html.twig:72
+#: templates/config.html.twig:73
 msgid "Left"
 msgstr ""
 
-#: templates/config.html.twig:78
+#: templates/config.html.twig:79
 msgid "Bubble type"
 msgstr ""
 
-#: templates/config.html.twig:80
+#: templates/config.html.twig:81
 msgid "Expanded bubble"
 msgstr ""
 
-#: templates/config.html.twig:81
+#: templates/config.html.twig:82
 msgid "Standard"
 msgstr ""
 
-#: templates/config.html.twig:87
+#: templates/config.html.twig:88
 msgid "Launcher title"
 msgstr ""
 
-#: templates/config.html.twig:89
+#: templates/config.html.twig:90
 msgid "Only shows up with the \"Expanded bubble\" type."
 msgstr ""
 
-#: templates/config.html.twig:94
+#: templates/config.html.twig:95
 msgid "Dark mode"
 msgstr ""
 
-#: templates/config.html.twig:96
+#: templates/config.html.twig:97
 msgid "Automatic (follows the browser)"
 msgstr ""
 
-#: templates/config.html.twig:97
+#: templates/config.html.twig:98
 msgid "Always light"
 msgstr ""
 
-#: templates/config.html.twig:98
+#: templates/config.html.twig:99
 msgid "Always dark"
 msgstr ""
 
-#: templates/config.html.twig:106
+#: templates/config.html.twig:107
 msgid "Who can see the widget"
 msgstr ""
 
-#: templates/config.html.twig:109
+#: templates/config.html.twig:110
 msgid "Leave all three fields empty to show the widget to every authenticated user. Select profiles, groups, and/or users to restrict visibility to them."
 msgstr ""
 
-#: templates/config.html.twig:115
+#: templates/config.html.twig:116
 msgid "Profiles"
 msgstr ""
 
-#: templates/config.html.twig:120 templates/config.html.twig:132 templates/config.html.twig:144 templates/config.html.twig:178
+#: templates/config.html.twig:121 templates/config.html.twig:133 templates/config.html.twig:145 templates/config.html.twig:179
 msgid "Type to search…"
 msgstr ""
 
-#: templates/config.html.twig:127
+#: templates/config.html.twig:128
 msgid "Groups"
 msgstr ""
 
-#: templates/config.html.twig:139
+#: templates/config.html.twig:140
 msgid "Users"
 msgstr ""
 
-#: templates/config.html.twig:153
+#: templates/config.html.twig:154
 msgid "Dashboard App panel security"
 msgstr ""
 
-#: templates/config.html.twig:156
+#: templates/config.html.twig:157
 msgid "The \"GLPI\" panel inside Chatwoot has no GLPI session — these options control exactly what it is allowed to expose."
 msgstr ""
 
-#: templates/config.html.twig:163
+#: templates/config.html.twig:164
 msgid "Show internal/private follow-ups to Chatwoot agents"
 msgstr ""
 
-#: templates/config.html.twig:165
+#: templates/config.html.twig:166
 msgid "Public follow-ups (the ticket history the requester also sees) are always shown. This option only controls follow-ups marked as Private in GLPI — technicians' internal notes. Off by default."
 msgstr ""
 
-#: templates/config.html.twig:171
+#: templates/config.html.twig:172
 msgid "Restrict the panel to specific entities"
 msgstr ""
 
-#: templates/config.html.twig:181
+#: templates/config.html.twig:182
 msgid "Selecting an entity also includes its sub-entities. When enabled with no entity selected, the panel shows no tickets at all, rather than every entity."
 msgstr ""
 
-#: templates/config.html.twig:186
+#: templates/config.html.twig:187
 msgid "Regenerate the Dashboard panel token? The panel will stop working in Chatwoot until it reloads with the new one."
 msgstr ""
 
-#: templates/config.html.twig:187
+#: templates/config.html.twig:188
 msgid "Regenerate panel token"
 msgstr ""
 
-#: templates/config.html.twig:189
+#: templates/config.html.twig:190
 msgid "Use this if the token may have leaked (e.g. an agent who had access left)."
 msgstr ""
 
-#: templates/config.html.twig:197
+#: templates/config.html.twig:198
 msgid "Test connection"
 msgstr ""
 
-#: templates/config.html.twig:286
+#: templates/config.html.twig:287
 msgid "Nothing found."
 msgstr ""
 
-#: templates/config.html.twig:361
+#: templates/config.html.twig:362
 msgid "Error testing the connection."
 msgstr ""
 
-#: templates/config.html.twig:373
+#: templates/config.html.twig:374
 msgid "You don't have permission to change the Chatwoot configuration."
 msgstr ""

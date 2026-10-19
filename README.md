@@ -106,8 +106,12 @@ Chatwoot itself showing the tickets of the person you're chatting with — no ne
   the **full timeline** (follow-ups from both sides + solution, with the channel — walk-in/email/etc
   — and internal notes flagged), and the list of **downloadable attachments**. A "← Back" button
   returns to the list, and "Open in GLPI ↗" opens the full page in a new tab.
-- If the conversation's identifier doesn't match any GLPI user, the plugin tries again by **phone**
-  (checking Phone, Mobile phone, and Phone 2, normalizing both sides to compare only the digits).
+- **Who the person is comes from Chatwoot itself**: the panel only tells GLPI which conversation is
+  open, and GLPI fetches that conversation's contact through the Chatwoot API. It then looks for the
+  GLPI user by the contact's **identifier** (the GLPI login, set by this plugin's widget) and, if
+  there's none or it doesn't match, by **phone** (checking Phone, Mobile phone, and Phone 2,
+  normalizing both sides to compare only the digits) — so both the GLPI widget and WhatsApp
+  conversations are covered.
 
 ## Languages
 
@@ -155,7 +159,7 @@ hardcoded to just `en`/`pt_BR`).
 | **GLPI** | 11.x only — see note below |
 | **PHP** | 8.1+ |
 | **Chatwoot** | Self-hosted or cloud, with a Website-type Inbox configured |
-| **Chatwoot API Access Token** | From an agent with access to the Inbox (Agent profile > Profile settings > Access Token) |
+| **Chatwoot API Access Token** | From an **administrator** (or an agent who is a member of every Inbox where the "GLPI" panel is used — e.g. the website widget *and* WhatsApp). Agent profile > Profile settings > Access Token |
 
 > **Why GLPI 11 only?** Earlier development versions attempted GLPI 10.x support, but GLPI 10 uses a
 > fundamentally different bootstrap/routing model (e.g. requires `inc/includes.php` in every script,
@@ -179,7 +183,7 @@ Fill in:
 | Field | Required | Where to find it in Chatwoot |
 |---|---|---|
 | Chatwoot URL | Yes | Your instance's address (e.g. `https://chat.yourcompany.com`) |
-| API Access Token | Yes | Agent profile > Profile settings > Access Token |
+| API Access Token | Yes | Agent profile > Profile settings > Access Token — preferably an **administrator's**, since the panel reads each conversation through it |
 | Account ID | Yes | Chatwoot dashboard URL (`/app/accounts/{id}/...`) |
 | Inbox ID | Yes | Inbox settings in Chatwoot |
 
@@ -210,9 +214,13 @@ This section was revised after an independent pre-publication security review of
   Chatwoot's domain, where the GLPI session cookie is normally not sent (modern browsers block
   third-party cookies in iframes). That's why these endpoints are public
   (`Firewall::STRATEGY_NO_CHECK` + `SessionManager::registerPluginStatelessPath`), but every one of
-  them is protected by the automatically generated integration token **and** a short-lived,
-  per-identity capability (minted once by `dashboard_identify.php`, valid for 5 minutes, bound to a
-  single GLPI user id). Neither the integration token nor the capability is ever carried in a URL —
+  them is protected by the automatically generated integration token **and** a short-lived
+  capability (minted by `dashboard_identify.php`, valid for 5 minutes, bound to a single GLPI user
+  id and to the Chatwoot conversation). The browser never says *who* the contact is: it only sends
+  the id of the open conversation, and the server fetches that conversation's contact through the
+  Chatwoot API before looking the person up in GLPI — so even a leaked integration token can't be
+  used to read the tickets of an arbitrary GLPI user, only of people who actually have a
+  conversation in that Chatwoot account. Neither the integration token nor the capability is ever carried in a URL —
   both travel as request headers, and the panel page sends `Referrer-Policy: no-referrer`.
   Attachments and embedded images use per-document links instead, minted when a ticket is opened:
   each one is bound to that user, that ticket and that single document, and expires after 10
@@ -220,8 +228,7 @@ This section was revised after an independent pre-publication security review of
   if an administrator explicitly opts in (off by default), and the panel can optionally be restricted
   to a chosen set of entities (sub-entities included). The integration token can be regenerated on
   demand from the configuration screen if it's ever suspected to have leaked. Identity resolution
-  (`dashboard_identify.php`, the only endpoint that accepts a login/phone) is throttled per IP
-  address and logged.
+  (`dashboard_identify.php`) is throttled per IP address and logged.
 - Only active, non-deleted GLPI accounts can be resolved through the panel.
 - Ticket descriptions and messages are converted from HTML to plain text on the server and inserted
   via `textContent` in the browser (never `innerHTML`), avoiding any risk of reproducing HTML/script
