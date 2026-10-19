@@ -271,11 +271,6 @@
     }
 
     function showDetail(ticketId) {
-        // Release the previous ticket's blob URLs — otherwise an agent
-        // browsing many tickets in one session would leak memory, since
-        // object URLs are never garbage-collected on their own.
-        objectUrls.forEach(function (url) { URL.revokeObjectURL(url); });
-        objectUrls = [];
 
         listViewEl.style.display = 'none';
         detailViewEl.style.display = 'block';
@@ -336,7 +331,8 @@
         descEl.textContent = ticket.description || t('no_description');
         detailViewEl.appendChild(descEl);
 
-        var descImages = imageGallery(ticket.description_images, ticket.id);
+        docLinks = ticket.doc_links || {};
+        var descImages = imageGallery(ticket.description_images);
         if (descImages) detailViewEl.appendChild(descImages);
 
         renderTimeline(ticket.timeline || [], ticket.id);
@@ -356,46 +352,39 @@
         bindBack();
     }
 
-    // Fetches a document (embedded image or attachment) with the token and
-    // capability as headers — never as URL parameters — and hands back an
-    // object URL. The document proxy re-confirms, on every call, that this
-    // document really belongs to this ticket before serving any byte.
-    var objectUrls = [];
-    function fetchDocument(ticketId, docId) {
-        var params = new URLSearchParams();
-        params.set('ticket_id', ticketId);
-        params.set('doc', docId);
+    // Every document shown in a ticket (embedded images and attachments)
+    // comes with its own short-lived link in ticket.doc_links, minted by the
+    // server when the detail was loaded (Config::mintDocumentLink()): bound
+    // to this user, this ticket and this document only. So plain
+    // <img src>/<a target="_blank"> links work — the file opens top-level
+    // with the server's own Content-Disposition/nosniff headers, never as a
+    // blob: URL (which would run under this page's GLPI origin and lose the
+    // server's `attachment` disposition).
+    var docLinks = {};
 
-        return authedFetch('/plugins/chatwoot/dashboard_app/dashboard_document.php?' + params.toString())
-            .then(function (r) { return r.ok ? r.blob() : null; })
-            .then(function (blob) {
-                if (!blob) return null;
-                var url = URL.createObjectURL(blob);
-                objectUrls.push(url);
-                return url;
-            })
-            .catch(function () { return null; });
+    function docLink(id) {
+        return docLinks[String(id)] || '';
     }
 
-    function imageGallery(ids, ticketId) {
+    function imageGallery(ids) {
         if (!ids || !ids.length) return null;
         var wrap = document.createElement('div');
         wrap.className = 'cw-image-gallery';
         ids.forEach(function (id) {
+            var href = docLink(id);
+            if (!href) return;
+            var a = document.createElement('a');
+            a.href = href;
+            a.target = '_blank';
+            a.rel = 'noreferrer noopener';
             var img = document.createElement('img');
             img.className = 'cw-image-thumb';
             img.loading = 'lazy';
-            withCapability().then(function (ok) {
-                if (!ok) return;
-                fetchDocument(ticketId, id).then(function (url) {
-                    if (!url) return;
-                    img.src = url;
-                    img.addEventListener('click', function () { window.open(url, '_blank', 'noopener,noreferrer'); });
-                });
-            });
-            wrap.appendChild(img);
+            img.src = href;
+            a.appendChild(img);
+            wrap.appendChild(a);
         });
-        return wrap;
+        return wrap.childNodes.length ? wrap : null;
     }
 
     function renderTimeline(items, ticketId) {
@@ -473,7 +462,7 @@
             box.appendChild(head);
             box.appendChild(body2);
 
-            var imgs = imageGallery(item.images, ticketId);
+            var imgs = imageGallery(item.images);
             if (imgs) box.appendChild(imgs);
 
             detailViewEl.appendChild(box);
@@ -505,18 +494,10 @@
 
             var name = document.createElement('a');
             name.className = 'cw-attachment-link';
-            name.href = '#';
+            name.href = docLink(f.id) || '#';
+            name.target = '_blank';
             name.rel = 'noreferrer noopener';
             name.textContent = f.name;
-            name.addEventListener('click', function (ev) {
-                ev.preventDefault();
-                withCapability().then(function (ok) {
-                    if (!ok) return;
-                    fetchDocument(ticketId, f.id).then(function (url) {
-                        if (url) window.open(url, '_blank', 'noopener,noreferrer');
-                    });
-                });
-            });
             row.appendChild(name);
 
             if (f.size) {

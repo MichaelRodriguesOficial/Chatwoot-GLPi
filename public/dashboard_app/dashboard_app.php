@@ -15,6 +15,10 @@ use GlpiPlugin\Chatwoot\Config as ChatwootConfig;
 header('Content-Type: text/html; charset=UTF-8');
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 header('X-Content-Type-Options: nosniff');
+// This page's own URL carries the integration token (`?t=`, the URL Chatwoot
+// registers for the iframe) — never forward it in a Referer header from the
+// panel's requests, images or links.
+header('Referrer-Policy: no-referrer');
 
 $token          = (string) ($_GET['t'] ?? '');
 $is_valid       = ChatwootConfig::isValidDashboardAppToken($token);

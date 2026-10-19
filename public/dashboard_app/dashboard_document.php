@@ -4,38 +4,38 @@
 //
 // This file is INTENTIONALLY public (no login required) — same explanation
 // as dashboard_tickets.php. Serves images embedded in the text and
-// attachments, but only after confirming (in Config::streamTicketDocumentForUser)
-// that the document really belongs to a ticket of the capability-bound user.
+// attachments of the ticket the agent is viewing in the panel.
 //
-// The panel (dashboard_app.js) fetches this endpoint with the token and
-// capability as headers, same as the other two data endpoints, and turns the
-// response into a blob URL for <img>/<a> — so neither secret ever appears in
-// a URL, GLPI's access log, a reverse proxy log, or browser history
-// (MEDIUM 3 of the 1.0.0 security review).
+// Authorized by a per-document link (`?d=`) minted by
+// Config::mintDocumentLink() when the ticket detail was loaded: bound to one
+// GLPI user, one ticket and one document, valid for a few minutes, and
+// unforgeable (GLPIKey authenticated encryption). The panel can therefore
+// use plain <img src>/<a href target="_blank"> links, exactly like 1.0.0,
+// without the instance-wide integration token or the capability ever
+// appearing in a URL (MEDIUM 3 of the 1.0.0 security review).
+//
+// Even with a valid link, Config::streamTicketDocumentForUser() re-checks on
+// every call that the ticket still belongs to that user (as requester, in an
+// allowed entity) and that the document is really linked to that ticket.
 
 // This file lives in public/dashboard_app/, so the plugin root is 2 levels up.
 require_once dirname(__DIR__, 2) . '/src/autoload.php';
 
 use GlpiPlugin\Chatwoot\Config as ChatwootConfig;
 
-$token      = (string) ($_SERVER['HTTP_X_CHATWOOT_PANEL_TOKEN'] ?? ($_GET['t'] ?? ''));
-$capability = (string) ($_SERVER['HTTP_X_CHATWOOT_CAPABILITY'] ?? ($_GET['cap'] ?? ''));
-$ticket_id  = (int) ($_GET['ticket_id'] ?? 0);
-$doc_id     = (int) ($_GET['doc'] ?? 0);
-
-if (!ChatwootConfig::isValidDashboardAppToken($token)) {
+$link = ChatwootConfig::verifyDocumentLink((string) ($_GET['d'] ?? ''));
+if ($link === null) {
     http_response_code(403);
-    return;
-}
-
-$user = ChatwootConfig::verifyCapability($capability);
-if (!$user) {
-    http_response_code(401);
+    header('Content-Type: text/plain; charset=UTF-8');
+    // No account language is known here (the link alone authorizes the
+    // request), so the message covers both languages the panel ships with.
+    echo "Link expired or invalid. Reopen the ticket in the panel.\n"
+        . "Link expirado ou inválido. Abra o chamado novamente no painel.\n";
     return;
 }
 
 try {
-    $file = ChatwootConfig::streamTicketDocumentForUser((int) $user['id'], $ticket_id, $doc_id);
+    $file = ChatwootConfig::streamTicketDocumentForUser($link['uid'], $link['tid'], $link['did']);
 } catch (\Throwable $e) {
     http_response_code(500);
     return;
@@ -46,9 +46,7 @@ if ($file === null) {
     return;
 }
 
-// Delegates to GLPI core's own Toolbox::getFileAsResponse() whenever
-// available (inline allow-list, Content-Disposition encoding, traversal
-// safety) — see Config::serveDocument() (HIGH 2 of the 1.0.0 review: this
-// used to send `Content-Disposition: inline` unconditionally for every mime
-// type, including attacker-controlled `text/html`).
+// Inline only for GLPI core's own allow-list (images except SVG, PDF),
+// `attachment` for everything else, always `nosniff` — see
+// Config::serveDocument() (HIGH 2 of the 1.0.0 review).
 ChatwootConfig::serveDocument($file);

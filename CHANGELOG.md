@@ -18,20 +18,24 @@ security review of 1.0.0.
 - Only active, non-deleted GLPI accounts can be resolved.
 - Identity resolution (`dashboard_identify.php`, the only endpoint that still accepts a login/phone)
   is rate-limited per IP address, with a lightweight audit log of lookups. The ticket/detail/document
-  endpoints are not throttled: they already require a capability bound to one user, and a single
-  ticket view legitimately fires several image requests.
-- Ticket attachments and embedded images are served through GLPI core's own
-  `Toolbox::getFileAsResponse()` (inline allow-list, correct `Content-Disposition` encoding, path
-  traversal safety) instead of a hand-rolled response that applied `Content-Disposition: inline`
-  unconditionally, including to an attacker-controlled `text/html` attachment.
+  endpoints are not throttled: they already require a capability (or a per-document link) bound to
+  one user, and a single ticket view legitimately fires several image requests.
+- Ticket attachments and embedded images are served with GLPI core's own inline allow-list (images
+  except SVG, and PDF — the same rules as `Toolbox::getFileAsResponse()`); everything else is forced
+  to `attachment`, always with `X-Content-Type-Options: nosniff`, a CSP sandbox, RFC 6266 filename
+  encoding, and a `realpath()` check that the file stays inside GLPI's document folder. Previously
+  `Content-Disposition: inline` was applied unconditionally, including to an attacker-controlled
+  `text/html` attachment. (Written with `header()`/`readfile()` rather than core's Symfony
+  `Response`, whose `send()` ends the request early under PHP-FPM and dropped the file body.)
 
 ### MEDIUM
 
 - The Dashboard App integration token is now encrypted at rest and registered under
   `Hooks::SECURED_FIELDS`. It — and the new capability — travel as request headers rather than URL
-  query parameters, so neither lands in access logs, browser history, or the `Referer` header.
-  Attachments/images are fetched by the panel as headers-authenticated blobs instead of plain
-  `<img src>`/`<a href>` links.
+  query parameters, so neither lands in access logs, browser history, or the `Referer` header; the
+  panel page also sends `Referrer-Policy: no-referrer`. Attachments/images use per-document links
+  minted when a ticket is opened — bound to one user, one ticket and one document, valid for 10
+  minutes — so a link copied out of a log exposes at most that one file, briefly.
 - A "Regenerate panel token" control lets administrators revoke a potentially leaked token on demand.
 - Outbound requests to the Chatwoot API never follow redirects while carrying the API Access Token
   header, and are restricted to `http`/`https` only. The Chatwoot URL is now validated before saving

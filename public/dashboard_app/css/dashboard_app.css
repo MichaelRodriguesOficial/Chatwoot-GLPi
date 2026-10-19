@@ -273,6 +273,7 @@ h2 {
   transition: opacity .15s ease;
 }
 .cw-image-thumb:hover { opacity: .85; }
+.cw-image-gallery > a { display: block; line-height: 0; }
 .cw-attachment {
   display: flex;
   align-items: center;

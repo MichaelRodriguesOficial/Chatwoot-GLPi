@@ -212,8 +212,10 @@ This section was revised after an independent pre-publication security review of
   them is protected by the automatically generated integration token **and** a short-lived,
   per-identity capability (minted once by `dashboard_identify.php`, valid for 5 minutes, bound to a
   single GLPI user id). Neither the integration token nor the capability is ever carried in a URL —
-  both travel as request headers, and the panel fetches attachments/images as headers-authenticated
-  blobs instead of plain `<img src>`/`<a href>` links. Private/internal follow-ups are only exposed
+  both travel as request headers, and the panel page sends `Referrer-Policy: no-referrer`.
+  Attachments and embedded images use per-document links instead, minted when a ticket is opened:
+  each one is bound to that user, that ticket and that single document, and expires after 10
+  minutes (like a pre-signed URL). Private/internal follow-ups are only exposed
   if an administrator explicitly opts in (off by default), and the panel can optionally be restricted
   to a chosen set of entities (sub-entities included). The integration token can be regenerated on
   demand from the configuration screen if it's ever suspected to have leaked. Identity resolution
@@ -225,9 +227,11 @@ This section was revised after an independent pre-publication security review of
   from old content.
 - Attachment and embedded image downloads go through a proxy that validates the document's ownership
   (directly on the ticket, or linked to one of its follow-ups/solution) before serving any byte, and
-  are always served with the same inline/attachment Content-Disposition rules GLPI core itself
-  applies (`Toolbox::getFileAsResponse()`) — never `inline` for an arbitrary, attacker-controlled
-  mime type.
+  are always served with the same inline allow-list GLPI core itself applies in
+  `Toolbox::getFileAsResponse()` (images except SVG, and PDF); everything else is forced to
+  `attachment`, always with `X-Content-Type-Options: nosniff` and a CSP sandbox — never `inline`
+  for an arbitrary, attacker-controlled mime type. The file path is re-resolved with `realpath()`
+  and must stay inside GLPI's document folder.
 - The Chatwoot widget loader on GLPI's own pages never executes code returned by the Chatwoot API —
   only the documented, static `sdk.js` loader is used, so it stays subject to your Content-Security-Policy.
 - Outbound requests to the Chatwoot API never follow redirects while carrying the API Access Token,

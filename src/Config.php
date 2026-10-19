@@ -485,6 +485,60 @@ class Config extends CommonDBTM
     }
 
     /**
+     * Seconds a per-document link stays valid. Long enough for an agent to
+     * read a ticket and click its attachments; short enough that a link
+     * copied out of an access log is useless soon after.
+     */
+    public const DOCUMENT_LINK_TTL = 600;
+
+    /**
+     * A link to ONE document, bound to the user, the ticket and the document
+     * (GLPIKey authenticated encryption — unforgeable and tamper-proof), the
+     * same pattern as an S3 pre-signed URL. Unlike the instance-wide
+     * integration token or the capability, leaking it exposes at most that
+     * single file for a few minutes, so it can live in a URL: the panel then
+     * uses plain <img src>/<a target="_blank"> links, and the file is opened
+     * top-level with the server's own Content-Disposition/nosniff headers.
+     * Relative to the panel page, so it works wherever GLPI is installed.
+     */
+    public static function mintDocumentLink(int $user_id, int $ticket_id, int $doc_id): string
+    {
+        $payload = json_encode([
+            'uid' => $user_id,
+            'tid' => $ticket_id,
+            'did' => $doc_id,
+            'exp' => time() + self::DOCUMENT_LINK_TTL,
+        ]);
+
+        return 'dashboard_document.php?d=' . rawurlencode((new GLPIKey())->encrypt((string) $payload));
+    }
+
+    /**
+     * @return array{uid:int, tid:int, did:int}|null
+     */
+    public static function verifyDocumentLink(string $token): ?array
+    {
+        if ($token === '') {
+            return null;
+        }
+        try {
+            $decrypted = (new GLPIKey())->decrypt($token);
+        } catch (\Throwable $e) {
+            return null;
+        }
+        $payload = json_decode((string) $decrypted, true);
+        if (
+            !is_array($payload)
+            || empty($payload['uid']) || empty($payload['tid']) || empty($payload['did']) || empty($payload['exp'])
+            || (int) $payload['exp'] < time()
+        ) {
+            return null;
+        }
+
+        return ['uid' => (int) $payload['uid'], 'tid' => (int) $payload['tid'], 'did' => (int) $payload['did']];
+    }
+
+    /**
      * Mints a short-lived capability for a resolved GLPI user — replaces
      * passing a raw `identifier`/`phone` to the ticket-data endpoints (see
      * dashboard_identify.php). Authenticated encryption (GLPIKey, the same
@@ -1092,7 +1146,7 @@ class Config extends CommonDBTM
         $description        = trim(html_entity_decode(strip_tags($raw_content), ENT_QUOTES, 'UTF-8'));
         $sla                 = self::computeSlaProgress($row);
 
-        return [
+        $detail = [
             'id'          => (int) $row['id'],
             'title'       => (string) $row['name'],
             'status'      => self::ticketStatusLabel((int) $row['status']),
@@ -1110,6 +1164,27 @@ class Config extends CommonDBTM
             'timeline'    => self::getTicketTimeline($ticket_id, $user_id, self::showPrivateFollowups()),
             'attachments' => self::getTicketAttachments($ticket_id),
         ];
+
+        // One short-lived link per document shown in this view (embedded
+        // images in the description and follow-ups, plus attachments), so
+        // the panel can use plain <img src>/<a href> — see mintDocumentLink().
+        $doc_ids = $detail['description_images'];
+        foreach ($detail['timeline'] as $item) {
+            foreach ((array) ($item['images'] ?? []) as $id) {
+                $doc_ids[] = $id;
+            }
+        }
+        foreach ($detail['attachments'] as $attachment) {
+            $doc_ids[] = $attachment['id'] ?? 0;
+        }
+        $detail['doc_links'] = [];
+        foreach (array_unique(array_map('intval', $doc_ids)) as $doc_id) {
+            if ($doc_id > 0) {
+                $detail['doc_links'][$doc_id] = self::mintDocumentLink($user_id, $ticket_id, $doc_id);
+            }
+        }
+
+        return $detail;
     }
 
     /**
@@ -1391,7 +1466,15 @@ class Config extends CommonDBTM
 
         // The ticket needs to belong to this user as requester, and (if
         // configured) be in an allowed entity...
-        $ticket_where = ['users_id' => $user_id, 'type' => 1, 'tickets_id' => $ticket_id];
+        // Every column table-qualified: glpi_tickets has its own `type`
+        // column (incident/request), so an unqualified `type` here is
+        // ambiguous once glpi_tickets is joined, and MySQL rejects the query.
+        $ticket_where = [
+            'glpi_tickets_users.users_id'   => $user_id,
+            'glpi_tickets_users.type'       => 1, // 1 = CommonITILActor::REQUESTER
+            'glpi_tickets_users.tickets_id' => $ticket_id,
+            'glpi_tickets.is_deleted'       => 0,
+        ];
         $owns_ticket = iterator_to_array($DB->request([
             'SELECT' => ['glpi_tickets_users.tickets_id'],
             'FROM'  => 'glpi_tickets_users',
@@ -1511,11 +1594,11 @@ class Config extends CommonDBTM
     }
 
     /**
-     * Mime types GLPI core itself allows to be displayed `inline` — mirrors
-     * Toolbox::getFileAsResponse()'s own allow-list (image/* minus the
-     * explicitly-excluded image/svg+xml, plus application/pdf). Used only as
-     * a fallback if core's helper isn't available; everything else is always
-     * forced to `attachment`, closing the stored-XSS gap of HIGH 2.
+     * Mime types allowed to be displayed `inline` — the same allow-list GLPI
+     * core applies in Toolbox::getFileAsResponse() (image/* minus the
+     * explicitly-excluded image/svg+xml, see glpi-project/glpi#3873, plus
+     * application/pdf). Everything else is always forced to `attachment`,
+     * closing the stored-XSS gap of HIGH 2 in the 1.0.0 security review.
      */
     private static function canDisplayInline(string $mime): bool
     {
@@ -1527,42 +1610,38 @@ class Config extends CommonDBTM
     }
 
     /**
-     * Serves a file resolved by streamTicketDocumentForUser(), delegating to
-     * GLPI core's own Toolbox::getFileAsResponse() whenever it's available —
-     * it already implements the inline allow-list, correct Content-Disposition
-     * encoding, and its own traversal safety. Falls back to a safe, minimal
-     * hand-written implementation (never `inline` outside the allow-list,
-     * always `X-Content-Type-Options: nosniff`) only if that method doesn't
-     * exist on this GLPI version.
+     * Serves a file resolved by streamTicketDocumentForUser() (path already
+     * confirmed to be inside GLPI_DOC_DIR via realpath()).
+     *
+     * Written with plain header()/readfile() on purpose instead of returning
+     * core's Toolbox::getFileAsResponse() Symfony Response: this is a legacy
+     * script whose output GLPI 11 buffers, and Response::send() ends the
+     * request early under PHP-FPM (fastcgi_finish_request()), which would drop
+     * the buffered body and leave attachments empty. The headers below apply
+     * the same rules core does — the review's own accepted alternative for
+     * HIGH 2: `inline` only inside the allow-list, `attachment` otherwise,
+     * `X-Content-Type-Options: nosniff` always, plus a CSP sandbox so even a
+     * mislabelled file can never run script on GLPI's origin.
      *
      * @param array{path: string, mime: string, name: string} $file
      */
     public static function serveDocument(array $file): void
     {
-        if (class_exists('\\Toolbox') && method_exists('\\Toolbox', 'getFileAsResponse')) {
-            try {
-                // In GLPI 11 this helper only BUILDS a Symfony Response — it
-                // never writes anything to the output on its own. It has to
-                // be sent explicitly, otherwise the endpoint answers 200 with
-                // an empty body (and the panel shows broken attachments).
-                $response = \Toolbox::getFileAsResponse($file['path'], $file['name'], $file['mime']);
-                if (is_object($response) && method_exists($response, 'send')) {
-                    $response->send();
-                    return;
-                }
-                // Older cores that stream the file themselves return nothing.
-                if ($response === null) {
-                    return;
-                }
-            } catch (\Throwable $e) {
-                // Falls through to the manual, allow-list based response below.
-            }
-        }
+        $mime        = (string) ($file['mime'] ?? '');
+        $mime        = preg_match('#^[a-z0-9.+-]+/[a-z0-9.+-]+$#i', $mime) === 1 ? $mime : 'application/octet-stream';
+        $disposition = self::canDisplayInline($mime) ? 'inline' : 'attachment';
 
-        $disposition = self::canDisplayInline($file['mime']) ? 'inline' : 'attachment';
-        header('Content-Type: ' . $file['mime']);
+        // RFC 6266: ASCII fallback in filename="", the real UTF-8 name in filename*=.
+        $name     = (string) ($file['name'] ?? 'document');
+        $fallback = preg_replace('/[^A-Za-z0-9._ -]/', '_', $name) ?: 'document';
+
+        header('Content-Type: ' . $mime);
         header('X-Content-Type-Options: nosniff');
-        header('Content-Disposition: ' . $disposition . '; filename="' . rawurlencode($file['name']) . '"');
+        if ($mime !== 'application/pdf') {
+            // Not for PDFs: Chrome's built-in viewer refuses sandboxed documents.
+            header("Content-Security-Policy: sandbox; default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'");
+        }
+        header('Content-Disposition: ' . $disposition . '; filename="' . $fallback . '"; filename*=UTF-8\'\'' . rawurlencode($name));
         header('Cache-Control: private, max-age=3600');
         header('Content-Length: ' . (string) filesize($file['path']));
         readfile($file['path']);
