@@ -25,6 +25,18 @@
     var capability = null;
     var capabilityExpiresAt = 0;
     var identifyInFlight = null;
+    // Bumped every time the agent switches to another contact. An identify()
+    // call that started for the previous contact must never store its
+    // capability once the switch happened, or the panel would keep showing
+    // the previous person's tickets until that capability expired.
+    var identityGeneration = 0;
+
+    function resetIdentity() {
+        identityGeneration++;
+        capability = null;
+        capabilityExpiresAt = 0;
+        identifyInFlight = null;
+    }
 
     function identify() {
         if (!currentIdentifier && !currentPhone) {
@@ -34,6 +46,7 @@
             return identifyInFlight;
         }
 
+        var generation = identityGeneration;
         var params = new URLSearchParams();
         params.set('identifier', currentIdentifier || '');
         params.set('phone', currentPhone || '');
@@ -48,6 +61,9 @@
         })
             .then(function (r) { return r.json(); })
             .then(function (data) {
+                if (generation !== identityGeneration) {
+                    return false; // the agent already moved to another contact
+                }
                 identifyInFlight = null;
                 if (!data || !data.found) {
                     capability = null;
@@ -62,6 +78,9 @@
                 return true;
             })
             .catch(function () {
+                if (generation !== identityGeneration) {
+                    return false;
+                }
                 identifyInFlight = null;
                 capability = null;
                 capabilityExpiresAt = 0;
@@ -83,6 +102,19 @@
             'X-Chatwoot-Panel-Token': token,
             'X-Chatwoot-Capability': capability || ''
         };
+    }
+
+    // fetch() with the auth headers, plus one automatic retry if the server
+    // says the capability is no longer valid (401) — e.g. it expired on the
+    // server a moment before the browser's own refresh margin kicked in.
+    function authedFetch(url) {
+        var send = function () { return fetch(url, { headers: authHeaders() }); };
+        return send().then(function (r) {
+            if (r.status !== 401) return r;
+            capability = null;
+            capabilityExpiresAt = 0;
+            return identify().then(function (ok) { return ok ? send() : r; });
+        });
     }
 
     // --- i18n -----------------------------------------------------------
@@ -217,9 +249,7 @@
             params.set('status', statusEl.value);
             params.set('lang', currentLocale);
 
-            fetch('/plugins/chatwoot/dashboard_app/dashboard_tickets.php?' + params.toString(), {
-                headers: authHeaders()
-            })
+            authedFetch('/plugins/chatwoot/dashboard_app/dashboard_tickets.php?' + params.toString())
                 .then(function (r) { return r.json(); })
                 .then(function (data) {
                     if (seq !== requestSeq) return; // stale response, ignore
@@ -262,9 +292,7 @@
             params.set('ticket_id', ticketId);
             params.set('lang', currentLocale);
 
-            fetch('/plugins/chatwoot/dashboard_app/dashboard_ticket_detail.php?' + params.toString(), {
-                headers: authHeaders()
-            })
+            authedFetch('/plugins/chatwoot/dashboard_app/dashboard_ticket_detail.php?' + params.toString())
                 .then(function (r) { return r.json(); })
                 .then(function (data) {
                     if (!data.found) {
@@ -338,9 +366,7 @@
         params.set('ticket_id', ticketId);
         params.set('doc', docId);
 
-        return fetch('/plugins/chatwoot/dashboard_app/dashboard_document.php?' + params.toString(), {
-            headers: authHeaders()
-        })
+        return authedFetch('/plugins/chatwoot/dashboard_app/dashboard_document.php?' + params.toString())
             .then(function (r) { return r.ok ? r.blob() : null; })
             .then(function (blob) {
                 if (!blob) return null;
@@ -542,9 +568,11 @@
         // search/filter.
         if (identifier && identifier !== currentIdentifier) {
             currentIdentifier = identifier;
-            currentPhone = findPhone(data) || currentPhone;
-            capability = null;
-            capabilityExpiresAt = 0;
+            // Never carry the previous contact's phone over: if this
+            // contact's identifier has no GLPI match, the phone fallback
+            // would otherwise resolve the PREVIOUS person.
+            currentPhone = findPhone(data) || null;
+            resetIdentity();
             subtitleEl.textContent = identifier;
             searchEl.disabled = false;
             statusEl.disabled = false;

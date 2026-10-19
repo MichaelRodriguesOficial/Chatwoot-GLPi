@@ -35,13 +35,6 @@ if (!ChatwootConfig::isValidDashboardAppToken($token)) {
     return;
 }
 
-$ip = ChatwootConfig::clientIp();
-if (!ChatwootConfig::checkAndLogAccess('tickets', $ip)) {
-    http_response_code(429);
-    echo json_encode(['error' => 'rate_limited']);
-    return;
-}
-
 // Matches the ticket status/priority labels to the language the panel
 // already resolved from the Chatwoot account — see
 // Config::applyRequestLanguage() for why this is safe (no real session touched).

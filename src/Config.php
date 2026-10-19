@@ -21,15 +21,18 @@ class Config extends CommonDBTM
      */
     public const ENCRYPTED_FIELDS = ['api_key', 'hmac_token', 'dashboard_app_token'];
 
-    /**
-     * Mirrors Hooks::SECURED_FIELDS in setup.php — kept here too so
-     * `prepareInputForUpdate()` and `security:change_key` never drift apart.
-     */
-    public const CAPABILITY_TTL = 300; // seconds a dashboard_identify.php capability stays valid
+    /** Seconds a capability minted by dashboard_identify.php stays valid. */
+    public const CAPABILITY_TTL = 300;
 
-    /** Simple throttle for the unauthenticated identity/ticket endpoints. */
+    /**
+     * Throttle for dashboard_identify.php — the only endpoint that accepts a
+     * raw identifier/phone, and therefore the only one an enumeration attempt
+     * could use. Counted per source IP; sized for a whole team of agents
+     * behind one office NAT (each agent identifies once per conversation and
+     * then reuses the capability for up to CAPABILITY_TTL seconds).
+     */
     private const ACCESS_LOG_WINDOW_SECONDS = 60;
-    private const ACCESS_LOG_MAX_PER_WINDOW = 20;
+    private const ACCESS_LOG_MAX_PER_WINDOW = 60;
 
     public static function getTable($classname = null): string
     {
@@ -543,11 +546,14 @@ class Config extends CommonDBTM
     }
 
     /**
-     * Throttle + audit trail for the unauthenticated Dashboard App surface.
+     * Throttle + audit trail for identity resolution (dashboard_identify.php).
      * Returns false (caller should reject the request with 429) when the
      * given IP has made too many calls in the recent window — a cheap
      * mitigation against identifier/phone enumeration and against the full
-     * table scan in findUserIdByPhone() being hammered.
+     * table scan in findUserIdByPhone() being hammered. Deliberately NOT
+     * applied to the ticket/detail/document endpoints: those already require
+     * a capability bound to one user, so they can't enumerate anyone, and
+     * a single ticket view can legitimately fire a dozen image requests.
      */
     public static function checkAndLogAccess(string $context, string $ip, bool $matched = false): bool
     {
@@ -802,7 +808,21 @@ class Config extends CommonDBTM
             return null;
         }
 
-        return self::getTargets()['Entity'] ?? [];
+        $selected = self::getTargets()['Entity'] ?? [];
+
+        // Same convention as GLPI's own recursive entity rights: selecting an
+        // entity also covers every sub-entity below it.
+        $allowed = [];
+        foreach ($selected as $entity_id) {
+            $allowed[] = (int) $entity_id;
+            if (class_exists('\\DbUtils') && method_exists('\\DbUtils', 'getSonsOf')) {
+                foreach ((new \DbUtils())->getSonsOf('glpi_entities', (int) $entity_id) as $son_id) {
+                    $allowed[] = (int) $son_id;
+                }
+            }
+        }
+
+        return array_values(array_unique($allowed));
     }
 
     /**
@@ -2094,7 +2114,7 @@ class Config extends CommonDBTM
         ]);
 
         $task->addVolume(1);
-        $task->log(__('Website Token/HMAC Token/widget script successfully updated.', 'chatwoot'));
+        $task->log(__('Website Token/HMAC Token successfully updated.', 'chatwoot'));
 
         return 1;
     }

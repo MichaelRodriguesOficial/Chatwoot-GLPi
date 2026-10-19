@@ -13,10 +13,13 @@ security review of 1.0.0.
   that the ticket list, ticket detail, and document endpoints now require instead.
 - Internal/private follow-ups are only exposed through the panel if an administrator explicitly
   enables "Show internal/private follow-ups to Chatwoot agents" (off by default).
-- The panel's ticket queries can optionally be restricted to a chosen set of entities.
+- The panel's ticket queries can optionally be restricted to a chosen set of entities (selecting an
+  entity also covers its sub-entities).
 - Only active, non-deleted GLPI accounts can be resolved.
-- The unauthenticated identity/ticket/document endpoints are now rate-limited per IP address, with a
-  lightweight audit log of access attempts.
+- Identity resolution (`dashboard_identify.php`, the only endpoint that still accepts a login/phone)
+  is rate-limited per IP address, with a lightweight audit log of lookups. The ticket/detail/document
+  endpoints are not throttled: they already require a capability bound to one user, and a single
+  ticket view legitimately fires several image requests.
 - Ticket attachments and embedded images are served through GLPI core's own
   `Toolbox::getFileAsResponse()` (inline allow-list, correct `Content-Disposition` encoding, path
   traversal safety) instead of a hand-rolled response that applied `Content-Disposition: inline`
@@ -51,6 +54,14 @@ security review of 1.0.0.
 
 - Dropped the Dashboard App widget-script storage path entirely (superseded by the fix above) and
   the vestigial pre-1.0.0 upgrade branches in the install routine.
+- Upgrading from 1.0.0 encrypts the existing Dashboard App token in place, so the panel already
+  registered in Chatwoot keeps working without re-saving the configuration.
+- The panel never mixes up contacts when the agent switches conversations: an identity lookup still
+  in flight for the previous contact is discarded, and the previous contact's phone number is no
+  longer reused as a fallback for the new one. An expired capability is renewed automatically.
+- Translations: every new configuration string is translated (pt_BR, en_GB, en_US), and the panel's
+  "invalid token" message now comes from its translation dictionary.
+- `sanity.php` checked paths one directory above the plugin root and always failed; fixed.
 
 ## 1.0.0 — Initial release
 

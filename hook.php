@@ -71,7 +71,7 @@ function plugin_chatwoot_install(): bool
         }
 
         // Opt-in: whether the panel's ticket queries are restricted to the
-        // entities selected under "Who can see the widget" > Entities.
+        // entities selected under "Dashboard App panel security".
         if (!$DB->fieldExists($table, 'restrict_entities')) {
             $migration->addField($table, 'restrict_entities', 'bool', ['value' => 0, 'after' => 'show_private_followups']);
         }
@@ -87,7 +87,42 @@ function plugin_chatwoot_install(): bool
 
     $migration->executeMigration();
 
+    // Must run after executeMigration(): the column has to be widened to
+    // `text` first, or the encrypted value wouldn't fit.
+    plugin_chatwoot_encrypt_legacy_dashboard_token($table);
+
     return true;
+}
+
+/**
+ * 1.0.0 stored the Dashboard App integration token in plaintext. Since 1.0.1
+ * it's encrypted at rest (Config::ENCRYPTED_FIELDS + Hooks::SECURED_FIELDS),
+ * so an un-migrated plaintext value would fail to decrypt and the panel inside
+ * Chatwoot would report an invalid token right after the upgrade. Encrypting
+ * it in place keeps the same token valid — the URL already registered in
+ * Chatwoot keeps working, with no need to re-save the configuration.
+ */
+function plugin_chatwoot_encrypt_legacy_dashboard_token(string $table): void
+{
+    global $DB;
+
+    if (!$DB->tableExists($table) || !$DB->fieldExists($table, 'dashboard_app_token')) {
+        return;
+    }
+
+    foreach ($DB->request(['SELECT' => ['id', 'dashboard_app_token'], 'FROM' => $table]) as $row) {
+        $value = (string) ($row['dashboard_app_token'] ?? '');
+        // 1.0.0 tokens are always bin2hex(random_bytes(32)): exactly 64
+        // lowercase hex characters. An encrypted value never looks like that.
+        if (preg_match('/^[0-9a-f]{64}$/', $value) !== 1) {
+            continue;
+        }
+        $DB->update(
+            $table,
+            ['dashboard_app_token' => (new GLPIKey())->encrypt($value)],
+            ['id' => (int) $row['id']]
+        );
+    }
 }
 
 /**

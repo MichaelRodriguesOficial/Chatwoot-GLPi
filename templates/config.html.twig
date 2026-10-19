@@ -162,7 +162,7 @@
     </div>
     <label class="form-check-label mb-0" for="chatwoot_show_private_followups">{{ __('Show internal/private follow-ups to Chatwoot agents', 'chatwoot') }}</label>
   </div>
-  <small class="form-text">{{ __('Off by default: agents then see exactly what the requester sees in the GLPI portal, not technicians\' internal notes.', 'chatwoot') }}</small>
+  <small class="form-text">{{ __('Public follow-ups (the ticket history the requester also sees) are always shown. This option only controls follow-ups marked as Private in GLPI — technicians\' internal notes. Off by default.', 'chatwoot') }}</small>
 
   <div class="chatwoot-status-row" style="margin-top:.75rem;">
     <div class="form-check form-switch mb-0">
@@ -178,7 +178,7 @@
       <input type="text" class="form-control chatwoot-picker-input" placeholder="{{ __('Type to search…', 'chatwoot') }}" autocomplete="off">
       <div class="chatwoot-picker-suggestions"></div>
     </div>
-    <small class="form-text">{{ __('When enabled with no entity selected, the panel shows no tickets at all, rather than every entity.', 'chatwoot') }}</small>
+    <small class="form-text">{{ __('Selecting an entity also includes its sub-entities. When enabled with no entity selected, the panel shows no tickets at all, rather than every entity.', 'chatwoot') }}</small>
   </div>
 
   <div class="chatwoot-status-row" style="margin-top:1rem;">

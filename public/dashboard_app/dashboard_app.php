@@ -19,22 +19,21 @@ header('X-Content-Type-Options: nosniff');
 $token          = (string) ($_GET['t'] ?? '');
 $is_valid       = ChatwootConfig::isValidDashboardAppToken($token);
 $status_options = [];
-$en_dict        = [];
-$pt_dict        = [];
 $locale         = 'en';
 $chatwoot_origin = '';
 
-if ($is_valid) {
-    // Translations for this panel's own fixed labels live as plain JSON next
-    // to this file (locales/en.json, locales/pt_BR.json) — kept separate
-    // from GLPI's own gettext locales/ folder at the plugin root, since this
-    // panel is a standalone page outside GLPI's template engine and doesn't
-    // go through gettext at all.
-    $en_json = @file_get_contents(__DIR__ . '/locales/en.json');
-    $pt_json = @file_get_contents(__DIR__ . '/locales/pt_BR.json');
-    $en_dict = $en_json !== false ? (json_decode($en_json, true) ?: []) : [];
-    $pt_dict = $pt_json !== false ? (json_decode($pt_json, true) ?: []) : [];
+// Translations for this panel's own fixed labels live as plain JSON next
+// to this file (locales/en.json, locales/pt_BR.json) — kept separate
+// from GLPI's own gettext locales/ folder at the plugin root, since this
+// panel is a standalone page outside GLPI's template engine and doesn't
+// go through gettext at all. Loaded even with an invalid token, so the
+// error message itself comes from the dictionary.
+$en_json = @file_get_contents(__DIR__ . '/locales/en.json');
+$pt_json = @file_get_contents(__DIR__ . '/locales/pt_BR.json');
+$en_dict = $en_json !== false ? (json_decode($en_json, true) ?: []) : [];
+$pt_dict = $pt_json !== false ? (json_decode($pt_json, true) ?: []) : [];
 
+if ($is_valid) {
     // Language is 100% automatic — driven only by the Chatwoot account's own
     // configured language (Config::getAccountLocale(), confirmed working via
     // GET /api/v1/accounts/{account_id}), never by GLPI's own language

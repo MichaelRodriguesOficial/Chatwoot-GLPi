@@ -28,12 +28,6 @@ if (!ChatwootConfig::isValidDashboardAppToken($token)) {
     return;
 }
 
-$ip = ChatwootConfig::clientIp();
-if (!ChatwootConfig::checkAndLogAccess('document', $ip)) {
-    http_response_code(429);
-    return;
-}
-
 $user = ChatwootConfig::verifyCapability($capability);
 if (!$user) {
     http_response_code(401);

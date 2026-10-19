@@ -62,11 +62,11 @@ Chatwoot itself showing the tickets of the person you're chatting with — no ne
 - **Minimal configuration**: only asks for the Chatwoot URL, API Access Token, Account ID, and Inbox
   ID — the **Website Token and HMAC Token are fetched automatically** from the Chatwoot API, no
   copy/pasting needed.
-- **Always up to date with Chatwoot**: instead of rebuilding the widget-loading logic by hand, the
-  plugin literally uses the official embed script returned by the Chatwoot API for that Inbox. If
-  Chatwoot changes the embed format in the future, it arrives automatically on the next sync.
+- **Official SDK loader**: the widget is loaded with Chatwoot's documented `sdk.js` loader
+  (`<script src>` from your Chatwoot URL) — the plugin never executes JavaScript returned by the
+  Chatwoot API, so the widget stays subject to your Content-Security-Policy.
 - **Automatic sync**: an automatic action (GLPI Automatic actions) runs hourly fetching the latest
-  Website Token/HMAC Token/embed script — if a token gets regenerated or the Inbox recreated on
+  Website Token/HMAC Token — if a token gets regenerated or the Inbox recreated on
   Chatwoot's side, the widget doesn't stay broken waiting for someone to notice and save manually.
   The **Test connection** button runs the same sync on the spot.
 - Customization: position (left/right), bubble type (standard/expanded), launcher title, and dark
@@ -215,9 +215,10 @@ This section was revised after an independent pre-publication security review of
   both travel as request headers, and the panel fetches attachments/images as headers-authenticated
   blobs instead of plain `<img src>`/`<a href>` links. Private/internal follow-ups are only exposed
   if an administrator explicitly opts in (off by default), and the panel can optionally be restricted
-  to a chosen set of entities. The integration token can be regenerated on demand from the
-  configuration screen if it's ever suspected to have leaked. The unauthenticated endpoints also
-  throttle repeated calls per IP address.
+  to a chosen set of entities (sub-entities included). The integration token can be regenerated on
+  demand from the configuration screen if it's ever suspected to have leaked. Identity resolution
+  (`dashboard_identify.php`, the only endpoint that accepts a login/phone) is throttled per IP
+  address and logged.
 - Only active, non-deleted GLPI accounts can be resolved through the panel.
 - Ticket descriptions and messages are converted from HTML to plain text on the server and inserted
   via `textContent` in the browser (never `innerHTML`), avoiding any risk of reproducing HTML/script
@@ -264,7 +265,7 @@ chatwoot/
 │       ├── dashboard_ticket_detail.php Ticket detail, with timeline and attachments (JSON)
 │       ├── dashboard_document.php      Attachment/embedded image download proxy
 │       └── locales/                Plain JSON translations for this panel only (en.json, pt_BR.json)
-├── locales/                        GLPI-side gettext translations: chatwoot.pot, en_GB.po/.mo, pt_BR.po/.mo
+├── locales/                        GLPI-side gettext translations: chatwoot.pot, en_GB/en_US/pt_BR .po/.mo
 ├── pics/
 │   └── logo.png                    Plugin logo (marketplace catalog listing)
 ├── screenshots/                    Images used in the "Screenshots" section above
