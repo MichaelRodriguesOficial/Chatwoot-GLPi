@@ -14,8 +14,10 @@ use GlpiPlugin\Chatwoot\Config as ChatwootConfig;
 header('Content-Type: application/json; charset=UTF-8');
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 
-$token      = (string) ($_SERVER['HTTP_X_CHATWOOT_PANEL_TOKEN'] ?? ($_GET['t'] ?? ''));
-$capability = (string) ($_SERVER['HTTP_X_CHATWOOT_CAPABILITY'] ?? ($_GET['cap'] ?? ''));
+// Headers only — never accepted from the query string, so neither secret
+// can end up in an access log, a proxy log or browser history.
+$token      = (string) ($_SERVER['HTTP_X_CHATWOOT_PANEL_TOKEN'] ?? '');
+$capability = (string) ($_SERVER['HTTP_X_CHATWOOT_CAPABILITY'] ?? '');
 $ticket_id  = (int) ($_GET['ticket_id'] ?? 0);
 $lang       = trim((string) ($_GET['lang'] ?? ''));
 
