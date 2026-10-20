@@ -1,206 +1,282 @@
-{% import "components/form/fields_macros.html.twig" as fields %}
 {% set csrf = csrf_token() %}
-<div class="center">
+{% set is_connected = config['website_token']|default('') != '' %}
+{% set panel_registered = config['dashboard_app_id']|default(0) > 0 %}
+<div class="chatwoot-config">
 <div class="card chatwoot-config-card">
-<div class="card-header"><h3 class="card-title"><i class="ti ti-message-circle"></i> Chatwoot</h3></div>
-<div class="card-body">
+
+  <div class="card-header chatwoot-head">
+    <div class="chatwoot-title">
+      <img src="{{ path('/Plugin/chatwoot/Logo') }}" alt="" class="chatwoot-logo" onerror="this.remove()">
+      <h3 class="card-title mb-0">Chatwoot</h3>
+      {% if plugin_version %}<span class="chatwoot-version">v{{ plugin_version }}</span>{% endif %}
+    </div>
+    <ul class="chatwoot-status" aria-label="{{ __('Status', 'chatwoot') }}">
+      <li class="{{ config['enabled'] ? 'is-on' : 'is-off' }}">{{ config['enabled'] ? __('Widget active', 'chatwoot') : __('Widget inactive', 'chatwoot') }}</li>
+      <li class="{{ is_connected ? 'is-on' : 'is-off' }}">{{ is_connected ? __('Connected to the Chatwoot inbox', 'chatwoot') : __('Not connected yet', 'chatwoot') }}</li>
+      <li class="{{ panel_registered ? 'is-on' : 'is-off' }}">{{ panel_registered ? __('GLPI tab registered in Chatwoot', 'chatwoot') : __('GLPI tab not registered yet', 'chatwoot') }}</li>
+    </ul>
+  </div>
+
 {% if can_edit %}
 <form name="chatwoot_config" action="{{ path('/plugins/chatwoot/front/config.form.php') }}" method="post">
 <input type="hidden" name="id" value="1">
 <input type="hidden" name="_glpi_csrf_token" value="{{ csrf }}">
 <input type="hidden" name="enabled" value="0">
 
-<div class="chatwoot-status-row">
-  <div class="form-check form-switch mb-0">
-    <input class="form-check-input" type="checkbox" role="switch" id="chatwoot_enabled" name="enabled" value="1" {% if config['enabled'] %}checked{% endif %}>
-  </div>
-  <label class="form-check-label fw-bold mb-0" for="chatwoot_enabled">{{ __('Active', 'chatwoot') }}</label>
-</div>
+  <ul class="nav nav-tabs chatwoot-tabs" role="tablist">
+    <li class="nav-item" role="presentation"><button type="button" class="nav-link" role="tab" data-chatwoot-tab="connection" aria-controls="chatwoot-tab-connection"><i class="ti ti-plug"></i> {{ __('Connection', 'chatwoot') }}</button></li>
+    <li class="nav-item" role="presentation"><button type="button" class="nav-link" role="tab" data-chatwoot-tab="widget" aria-controls="chatwoot-tab-widget"><i class="ti ti-message-circle"></i> {{ __('Widget', 'chatwoot') }}</button></li>
+    <li class="nav-item" role="presentation"><button type="button" class="nav-link" role="tab" data-chatwoot-tab="visibility" aria-controls="chatwoot-tab-visibility"><i class="ti ti-users"></i> {{ __('Who can see the widget', 'chatwoot') }}</button></li>
+    <li class="nav-item" role="presentation"><button type="button" class="nav-link" role="tab" data-chatwoot-tab="panel" aria-controls="chatwoot-tab-panel"><i class="ti ti-layout-sidebar-right"></i> {{ __('GLPI tab in Chatwoot', 'chatwoot') }}</button></li>
+  </ul>
 
-<div class="chatwoot-section">
-  <div class="chatwoot-section-title"><i class="ti ti-plug"></i> {{ __('Connection to Chatwoot', 'chatwoot') }}</div>
-  <div class="alert alert-info">
-    <i class="ti ti-info-circle"></i>
-    {{ __("Website Token and HMAC Token don't need to be typed in: they are automatically fetched from the Chatwoot API when saving, based on the Account ID and Inbox ID below.", 'chatwoot') }}
-  </div>
+  <div class="card-body chatwoot-panes">
 
-  <div class="chatwoot-field">
-    <label for="chatwoot_base_url">{{ __('Chatwoot URL', 'chatwoot') }} *</label>
-    <input type="text" class="form-control" id="chatwoot_base_url" name="base_url" value="{{ config['base_url']|default('') }}" placeholder="https://chat.yourcompany.com">
-    <small class="form-text">{{ __('Base address of your Chatwoot instance (no trailing slash).', 'chatwoot') }}</small>
-  </div>
+    {# ── Connection ─────────────────────────────────────────────── #}
+    <section class="chatwoot-pane" id="chatwoot-tab-connection" role="tabpanel" data-chatwoot-pane="connection">
+      <p class="chatwoot-lead">{{ __("Website Token and HMAC Token don't need to be typed in: they are automatically fetched from the Chatwoot API when saving, based on the Account ID and Inbox ID below.", 'chatwoot') }}</p>
 
-  <div class="chatwoot-field">
-    <label for="chatwoot_api_key">{{ __('API Access Token', 'chatwoot') }} {% if not config['api_key'] %}*{% endif %}</label>
-    <div class="chatwoot-field-wrap">
-      <input type="password" class="form-control" id="chatwoot_api_key" name="api_key" value=""
-             placeholder="{{ config['api_key'] ? __('•••••••• (configured — leave blank to keep)', 'chatwoot') : '' }}"
-             autocomplete="new-password">
-    </div>
-    <small class="form-text">{{ __('Agent profile > Profile settings > "Access Token". Never re-displayed once saved — leave blank to keep the current value.', 'chatwoot') }}</small>
-    <small class="form-text">{{ __('Use an administrator\'s token (or one from an agent who is a member of every inbox where the GLPI panel is used, e.g. the website widget and WhatsApp): the panel identifies each conversation\'s contact through it.', 'chatwoot') }}</small>
-  </div>
-
-  <div class="row">
-    <div class="col-md-6">
       <div class="chatwoot-field">
-        <label for="chatwoot_account_id">{{ __('Account ID', 'chatwoot') }} *</label>
-        <input type="text" class="form-control" id="chatwoot_account_id" name="account_id" value="{{ config['account_id']|default('') }}">
+        <label for="chatwoot_base_url">{{ __('Chatwoot URL', 'chatwoot') }} *</label>
+        <input type="text" class="form-control" id="chatwoot_base_url" name="base_url" value="{{ config['base_url']|default('') }}" placeholder="https://chat.yourcompany.com">
+        <small class="form-text">{{ __('Base address of your Chatwoot instance (no trailing slash).', 'chatwoot') }}</small>
       </div>
-    </div>
-    <div class="col-md-6">
-      <div class="chatwoot-field">
-        <label for="chatwoot_inbox_id">{{ __('Inbox ID', 'chatwoot') }} *</label>
-        <input type="text" class="form-control" id="chatwoot_inbox_id" name="inbox_id" value="{{ config['inbox_id']|default('') }}">
-      </div>
-    </div>
-  </div>
-</div>
 
-<div class="chatwoot-section">
-  <div class="chatwoot-section-title"><i class="ti ti-adjustments"></i> {{ __('Widget customization', 'chatwoot') }}</div>
-  <div class="alert alert-info">
-    <i class="ti ti-info-circle"></i>
-    {{ __('The Chatwoot API does not return the Widget Builder options (position, type, launcher title) — configure them here to apply them on top of the automatically fetched script.', 'chatwoot') }}
-  </div>
+      <div class="chatwoot-field">
+        <label for="chatwoot_api_key">{{ __('API Access Token', 'chatwoot') }} {% if not config['api_key'] %}*{% endif %}</label>
+        <div class="chatwoot-field-wrap">
+          <input type="password" class="form-control" id="chatwoot_api_key" name="api_key" value=""
+                 placeholder="{{ config['api_key'] ? __('•••••••• (configured — leave blank to keep)', 'chatwoot') : '' }}"
+                 autocomplete="new-password">
+        </div>
+        <small class="form-text d-block">{{ __('Agent profile > Profile settings > "Access Token". Never re-displayed once saved — leave blank to keep the current value.', 'chatwoot') }}</small>
+        <small class="form-text d-block mt-1">{{ __("Use an administrator's token (or one from an agent who is a member of every inbox where the GLPI panel is used, e.g. the website widget and WhatsApp): the panel identifies each conversation's contact through it.", 'chatwoot') }}</small>
+      </div>
 
-  <div class="row">
-    <div class="col-md-4">
-      <div class="chatwoot-field">
-        <label for="chatwoot_widget_position">{{ __('Position', 'chatwoot') }}</label>
-        <select class="form-select" id="chatwoot_widget_position" name="widget_position">
-          <option value="right" {% if (config['widget_position']|default('right')) == 'right' %}selected{% endif %}>{{ __('Right', 'chatwoot') }}</option>
-          <option value="left" {% if config['widget_position'] == 'left' %}selected{% endif %}>{{ __('Left', 'chatwoot') }}</option>
-        </select>
+      <div class="row">
+        <div class="col-md-6">
+          <div class="chatwoot-field">
+            <label for="chatwoot_account_id">{{ __('Account ID', 'chatwoot') }} *</label>
+            <input type="text" class="form-control" id="chatwoot_account_id" name="account_id" value="{{ config['account_id']|default('') }}">
+          </div>
+        </div>
+        <div class="col-md-6">
+          <div class="chatwoot-field">
+            <label for="chatwoot_inbox_id">{{ __('Inbox ID', 'chatwoot') }} *</label>
+            <input type="text" class="form-control" id="chatwoot_inbox_id" name="inbox_id" value="{{ config['inbox_id']|default('') }}">
+            <small class="form-text">{{ __('The Website inbox used by the widget inside GLPI.', 'chatwoot') }}</small>
+          </div>
+        </div>
       </div>
-    </div>
-    <div class="col-md-4">
-      <div class="chatwoot-field">
-        <label for="chatwoot_widget_type">{{ __('Bubble type', 'chatwoot') }}</label>
-        <select class="form-select" id="chatwoot_widget_type" name="widget_type">
-          <option value="expanded_bubble" {% if (config['widget_type']|default('expanded_bubble')) == 'expanded_bubble' %}selected{% endif %}>{{ __('Expanded bubble', 'chatwoot') }}</option>
-          <option value="standard" {% if config['widget_type'] == 'standard' %}selected{% endif %}>{{ __('Standard', 'chatwoot') }}</option>
-        </select>
-      </div>
-    </div>
-    <div class="col-md-4">
-      <div class="chatwoot-field">
-        <label for="chatwoot_widget_launcher_title">{{ __('Launcher title', 'chatwoot') }}</label>
-        <input type="text" class="form-control" id="chatwoot_widget_launcher_title" name="widget_launcher_title" value="{{ config['widget_launcher_title']|default('') }}">
-        <small class="form-text">{{ __('Only shows up with the "Expanded bubble" type.', 'chatwoot') }}</small>
-      </div>
-    </div>
-    <div class="col-md-4">
-      <div class="chatwoot-field">
-        <label for="chatwoot_widget_dark_mode">{{ __('Dark mode', 'chatwoot') }}</label>
-        <select class="form-select" id="chatwoot_widget_dark_mode" name="widget_dark_mode">
-          <option value="auto" {% if (config['widget_dark_mode']|default('auto')) == 'auto' %}selected{% endif %}>{{ __('Automatic (follows the browser)', 'chatwoot') }}</option>
-          <option value="light" {% if config['widget_dark_mode'] == 'light' %}selected{% endif %}>{{ __('Always light', 'chatwoot') }}</option>
-          <option value="dark" {% if config['widget_dark_mode'] == 'dark' %}selected{% endif %}>{{ __('Always dark', 'chatwoot') }}</option>
-        </select>
-      </div>
-    </div>
-  </div>
-</div>
+    </section>
 
-<div class="chatwoot-section">
-  <div class="chatwoot-section-title"><i class="ti ti-users"></i> {{ __('Who can see the widget', 'chatwoot') }}</div>
-  <div class="alert alert-info">
-    <i class="ti ti-info-circle"></i>
-    {{ __('Leave all three fields empty to show the widget to every authenticated user. Select profiles, groups, and/or users to restrict visibility to them.', 'chatwoot') }}
-  </div>
+    {# ── Widget ─────────────────────────────────────────────────── #}
+    <section class="chatwoot-pane" id="chatwoot-tab-widget" role="tabpanel" data-chatwoot-pane="widget">
+      <div class="chatwoot-switch">
+        <div class="form-check form-switch mb-0">
+          <input class="form-check-input" type="checkbox" role="switch" id="chatwoot_enabled" name="enabled" value="1" {% if config['enabled'] %}checked{% endif %}>
+        </div>
+        <label class="form-check-label" for="chatwoot_enabled">
+          <span class="fw-bold">{{ __('Show the chat widget on GLPI pages', 'chatwoot') }}</span>
+          <small class="form-text d-block">{{ __('When off, nobody sees the widget. The GLPI tab inside Chatwoot keeps working.', 'chatwoot') }}</small>
+        </label>
+      </div>
 
-  <div class="row">
-    <div class="col-md-4">
+      <h4 class="chatwoot-subtitle">{{ __('Appearance', 'chatwoot') }}</h4>
+      <p class="chatwoot-lead">{{ __("Chatwoot's Widget Builder settings aren't available through its API, so set them here.", 'chatwoot') }}</p>
+      <div class="row">
+        <div class="col-md-6">
+          <div class="chatwoot-field">
+            <label for="chatwoot_widget_position">{{ __('Position', 'chatwoot') }}</label>
+            <select class="form-select" id="chatwoot_widget_position" name="widget_position">
+              <option value="right" {% if (config['widget_position']|default('right')) == 'right' %}selected{% endif %}>{{ __('Right', 'chatwoot') }}</option>
+              <option value="left" {% if config['widget_position'] == 'left' %}selected{% endif %}>{{ __('Left', 'chatwoot') }}</option>
+            </select>
+          </div>
+        </div>
+        <div class="col-md-6">
+          <div class="chatwoot-field">
+            <label for="chatwoot_widget_dark_mode">{{ __('Dark mode', 'chatwoot') }}</label>
+            <select class="form-select" id="chatwoot_widget_dark_mode" name="widget_dark_mode">
+              <option value="auto" {% if (config['widget_dark_mode']|default('auto')) == 'auto' %}selected{% endif %}>{{ __('Automatic (follows the browser)', 'chatwoot') }}</option>
+              <option value="light" {% if config['widget_dark_mode'] == 'light' %}selected{% endif %}>{{ __('Always light', 'chatwoot') }}</option>
+              <option value="dark" {% if config['widget_dark_mode'] == 'dark' %}selected{% endif %}>{{ __('Always dark', 'chatwoot') }}</option>
+            </select>
+          </div>
+        </div>
+        <div class="col-md-6">
+          <div class="chatwoot-field">
+            <label for="chatwoot_widget_type">{{ __('Bubble type', 'chatwoot') }}</label>
+            <select class="form-select" id="chatwoot_widget_type" name="widget_type">
+              <option value="expanded_bubble" {% if (config['widget_type']|default('expanded_bubble')) == 'expanded_bubble' %}selected{% endif %}>{{ __('Expanded bubble', 'chatwoot') }}</option>
+              <option value="standard" {% if config['widget_type'] == 'standard' %}selected{% endif %}>{{ __('Standard', 'chatwoot') }}</option>
+            </select>
+          </div>
+        </div>
+        <div class="col-md-6">
+          <div class="chatwoot-field">
+            <label for="chatwoot_widget_launcher_title">{{ __('Launcher title', 'chatwoot') }}</label>
+            <input type="text" class="form-control" id="chatwoot_widget_launcher_title" name="widget_launcher_title" value="{{ config['widget_launcher_title']|default('') }}">
+            <small class="form-text">{{ __('Only shows up with the "Expanded bubble" type.', 'chatwoot') }}</small>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    {# ── Who can see the widget ─────────────────────────────────── #}
+    <section class="chatwoot-pane" id="chatwoot-tab-visibility" role="tabpanel" data-chatwoot-pane="visibility">
+      <p class="chatwoot-lead">{{ __('Leave all three fields empty to show the widget to every authenticated user. Select profiles, groups, and/or users to restrict visibility to them.', 'chatwoot') }}</p>
+      {% for picker in [
+          {itemtype: 'Profile', field: 'target_profiles', label: __('Profiles', 'chatwoot'), ids: targets.Profile, labels: profile_labels},
+          {itemtype: 'Group', field: 'target_groups', label: __('Groups', 'chatwoot'), ids: targets.Group, labels: group_labels},
+          {itemtype: 'User', field: 'target_users', label: __('Users', 'chatwoot'), ids: targets.User, labels: user_labels}
+      ] %}
       <div class="chatwoot-field">
-        <label>{{ __('Profiles', 'chatwoot') }}</label>
-        <div class="chatwoot-picker" data-itemtype="Profile" data-field-name="target_profiles"
-             data-initial='{{ targets.Profile|json_encode|e('html_attr') }}'
-             data-initial-labels='{{ profile_labels|json_encode|e('html_attr') }}'>
+        <label>{{ picker.label }}</label>
+        <div class="chatwoot-picker" data-itemtype="{{ picker.itemtype }}" data-field-name="{{ picker.field }}"
+             data-initial='{{ picker.ids|json_encode|e('html_attr') }}'
+             data-initial-labels='{{ picker.labels|json_encode|e('html_attr') }}'>
           <div class="chatwoot-picker-chips"></div>
           <input type="text" class="form-control chatwoot-picker-input" placeholder="{{ __('Type to search…', 'chatwoot') }}" autocomplete="off">
           <div class="chatwoot-picker-suggestions"></div>
         </div>
       </div>
-    </div>
-    <div class="col-md-4">
-      <div class="chatwoot-field">
-        <label>{{ __('Groups', 'chatwoot') }}</label>
-        <div class="chatwoot-picker" data-itemtype="Group" data-field-name="target_groups"
-             data-initial='{{ targets.Group|json_encode|e('html_attr') }}'
-             data-initial-labels='{{ group_labels|json_encode|e('html_attr') }}'>
+      {% endfor %}
+    </section>
+
+    {# ── GLPI tab in Chatwoot ───────────────────────────────────── #}
+    <section class="chatwoot-pane" id="chatwoot-tab-panel" role="tabpanel" data-chatwoot-pane="panel">
+      <p class="chatwoot-lead">{{ __('The "GLPI" panel inside Chatwoot has no GLPI session — these options control exactly what it is allowed to expose.', 'chatwoot') }}</p>
+
+      <h4 class="chatwoot-subtitle">{{ __('Inboxes', 'chatwoot') }}</h4>
+      <p class="chatwoot-hint">{{ __('The GLPI tab only works in conversations from the inboxes checked below.', 'chatwoot') }}</p>
+      {% set channel_icons = {'WebWidget': 'ti-world', 'Whatsapp': 'ti-brand-whatsapp', 'Email': 'ti-mail', 'Api': 'ti-api', 'Telegram': 'ti-brand-telegram', 'FacebookPage': 'ti-brand-facebook', 'Instagram': 'ti-brand-instagram', 'Sms': 'ti-message', 'TwilioSms': 'ti-message', 'Line': 'ti-brand-line'} %}
+      {% if panel_inboxes.ok %}
+        <div class="chatwoot-inboxes" data-chatwoot-inboxes>
+          {% for inbox in panel_inboxes.inboxes %}
+          <label class="chatwoot-inbox">
+            <input type="checkbox" class="form-check-input" name="panel_inbox_ids[]" value="{{ inbox.id }}" {% if inbox.id in panel_inbox_ids %}checked{% endif %}>
+            <i class="ti {{ channel_icons[inbox.channel]|default('ti-inbox') }}" aria-hidden="true"></i>
+            <span class="chatwoot-inbox-name">{{ inbox.name }}</span>
+            <span class="chatwoot-inbox-id">#{{ inbox.id }}</span>
+          </label>
+          {% else %}
+          <p class="chatwoot-hint">{{ __('No inbox found in this Chatwoot account.', 'chatwoot') }}</p>
+          {% endfor %}
+        </div>
+      {% else %}
+        <div class="chatwoot-field">
+          <label for="chatwoot_panel_inbox_ids_manual">{{ __('Inbox IDs', 'chatwoot') }}</label>
+          <input type="text" class="form-control" id="chatwoot_panel_inbox_ids_manual" name="panel_inbox_ids_manual" value="{{ panel_inbox_ids|join(', ') }}" placeholder="3, 7" data-chatwoot-inboxes-manual>
+          <small class="form-text">{{ __('The inbox list could not be loaded from Chatwoot (save the connection first). Type the inbox IDs, separated by commas.', 'chatwoot') }}</small>
+        </div>
+      {% endif %}
+      <div class="alert alert-warning chatwoot-inline-alert d-none" data-chatwoot-inboxes-empty>
+        <i class="ti ti-alert-triangle"></i> {{ __('No inbox selected: the GLPI tab will not show tickets in any conversation.', 'chatwoot') }}
+      </div>
+
+      <h4 class="chatwoot-subtitle">{{ __('Which tickets the tab can show', 'chatwoot') }}</h4>
+      <div class="chatwoot-choice">
+        <label class="form-check">
+          <input class="form-check-input" type="radio" name="restrict_entities" value="0" {% if not config['restrict_entities'] %}checked{% endif %} data-chatwoot-scope>
+          <span class="form-check-label">{{ __('Tickets from all entities', 'chatwoot') }}</span>
+        </label>
+        <label class="form-check">
+          <input class="form-check-input" type="radio" name="restrict_entities" value="1" {% if config['restrict_entities'] %}checked{% endif %} data-chatwoot-scope>
+          <span class="form-check-label">{{ __('Only tickets from the entities below (sub-entities included)', 'chatwoot') }}</span>
+        </label>
+      </div>
+      <div class="chatwoot-field chatwoot-indent" data-chatwoot-entities>
+        <div class="chatwoot-picker" data-itemtype="Entity" data-field-name="target_entities"
+             data-initial='{{ targets.Entity|json_encode|e('html_attr') }}'
+             data-initial-labels='{{ entity_labels|json_encode|e('html_attr') }}'>
           <div class="chatwoot-picker-chips"></div>
           <input type="text" class="form-control chatwoot-picker-input" placeholder="{{ __('Type to search…', 'chatwoot') }}" autocomplete="off">
           <div class="chatwoot-picker-suggestions"></div>
         </div>
-      </div>
-    </div>
-    <div class="col-md-4">
-      <div class="chatwoot-field">
-        <label>{{ __('Users', 'chatwoot') }}</label>
-        <div class="chatwoot-picker" data-itemtype="User" data-field-name="target_users"
-             data-initial='{{ targets.User|json_encode|e('html_attr') }}'
-             data-initial-labels='{{ user_labels|json_encode|e('html_attr') }}'>
-          <div class="chatwoot-picker-chips"></div>
-          <input type="text" class="form-control chatwoot-picker-input" placeholder="{{ __('Type to search…', 'chatwoot') }}" autocomplete="off">
-          <div class="chatwoot-picker-suggestions"></div>
+        <div class="alert alert-warning chatwoot-inline-alert d-none" data-chatwoot-entities-empty>
+          <i class="ti ti-alert-triangle"></i> {{ __('No entity selected: the GLPI tab will not show any ticket.', 'chatwoot') }}
         </div>
       </div>
-    </div>
-  </div>
-</div>
 
-<div class="chatwoot-section">
-  <div class="chatwoot-section-title"><i class="ti ti-shield-lock"></i> {{ __('Dashboard App panel security', 'chatwoot') }}</div>
-  <div class="alert alert-info">
-    <i class="ti ti-info-circle"></i>
-    {{ __('The "GLPI" panel inside Chatwoot has no GLPI session — these options control exactly what it is allowed to expose.', 'chatwoot') }}
-  </div>
+      <h4 class="chatwoot-subtitle">{{ __('Internal notes', 'chatwoot') }}</h4>
+      <div class="chatwoot-switch">
+        <div class="form-check form-switch mb-0">
+          <input class="form-check-input" type="checkbox" role="switch" id="chatwoot_show_private_followups" name="show_private_followups" value="1" {% if config['show_private_followups'] %}checked{% endif %}>
+        </div>
+        <label class="form-check-label" for="chatwoot_show_private_followups">
+          <span class="fw-bold">{{ __('Show internal/private follow-ups to Chatwoot agents', 'chatwoot') }}</span>
+          <small class="form-text d-block">{{ __("Public follow-ups (the ticket history the requester also sees) are always shown. This option only controls follow-ups marked as Private in GLPI — technicians' internal notes. Off by default.", 'chatwoot') }}</small>
+        </label>
+      </div>
 
-  <div class="chatwoot-status-row">
-    <div class="form-check form-switch mb-0">
-      <input class="form-check-input" type="checkbox" role="switch" id="chatwoot_show_private_followups" name="show_private_followups" value="1" {% if config['show_private_followups'] %}checked{% endif %}>
-    </div>
-    <label class="form-check-label mb-0" for="chatwoot_show_private_followups">{{ __('Show internal/private follow-ups to Chatwoot agents', 'chatwoot') }}</label>
-  </div>
-  <small class="form-text">{{ __('Public follow-ups (the ticket history the requester also sees) are always shown. This option only controls follow-ups marked as Private in GLPI — technicians\' internal notes. Off by default.', 'chatwoot') }}</small>
+      <div class="chatwoot-danger">
+        <div>
+          <span class="fw-bold">{{ __('Regenerate panel token', 'chatwoot') }}</span>
+          <small class="form-text d-block">{{ __('Use this if the token may have leaked (e.g. an agent who had access left).', 'chatwoot') }}</small>
+        </div>
+        {# Belongs to its own form (below the main one): as the first submit
+           button of the main form it would otherwise be triggered by pressing
+           Enter in any field. #}
+        <button type="submit" form="chatwoot-rotate-form" class="btn btn-outline-danger"
+                onclick="return confirm('{{ __('Regenerate the Dashboard panel token? The panel will stop working in Chatwoot until it reloads with the new one.', 'chatwoot')|e('js') }}');">
+          <i class="ti ti-refresh"></i> {{ __('Regenerate', 'chatwoot') }}
+        </button>
+      </div>
+    </section>
 
-  <div class="chatwoot-status-row" style="margin-top:.75rem;">
-    <div class="form-check form-switch mb-0">
-      <input class="form-check-input" type="checkbox" role="switch" id="chatwoot_restrict_entities" name="restrict_entities" value="1" {% if config['restrict_entities'] %}checked{% endif %}>
-    </div>
-    <label class="form-check-label mb-0" for="chatwoot_restrict_entities">{{ __('Restrict the panel to specific entities', 'chatwoot') }}</label>
-  </div>
-  <div class="chatwoot-field" style="margin-top:.5rem;">
-    <div class="chatwoot-picker" data-itemtype="Entity" data-field-name="target_entities"
-         data-initial='{{ targets.Entity|json_encode|e('html_attr') }}'
-         data-initial-labels='{{ entity_labels|json_encode|e('html_attr') }}'>
-      <div class="chatwoot-picker-chips"></div>
-      <input type="text" class="form-control chatwoot-picker-input" placeholder="{{ __('Type to search…', 'chatwoot') }}" autocomplete="off">
-      <div class="chatwoot-picker-suggestions"></div>
-    </div>
-    <small class="form-text">{{ __('Selecting an entity also includes its sub-entities. When enabled with no entity selected, the panel shows no tickets at all, rather than every entity.', 'chatwoot') }}</small>
   </div>
 
-  <div class="chatwoot-status-row" style="margin-top:1rem;">
-    <button type="submit" name="rotate_token" value="1" class="btn btn-outline-danger btn-sm"
-            onclick="return confirm('{{ __('Regenerate the Dashboard panel token? The panel will stop working in Chatwoot until it reloads with the new one.', 'chatwoot')|e('js') }}');">
-      <i class="ti ti-refresh"></i> {{ __('Regenerate panel token', 'chatwoot') }}
-    </button>
-    <small class="form-text" style="margin-left:.5rem;">{{ __('Use this if the token may have leaked (e.g. an agent who had access left).', 'chatwoot') }}</small>
+  <div class="card-footer chatwoot-actions">
+    <button type="submit" name="update" value="1" class="btn btn-primary"><i class="ti ti-device-floppy"></i> {{ _x('button', 'Save') }}</button>
+    <button type="button" id="chatwoot-test-btn" class="btn btn-outline-secondary"><i class="ti ti-plug-connected"></i> {{ __('Test connection', 'chatwoot') }}</button>
+    <div id="chatwoot-test-result" class="alert d-none chatwoot-result-box mb-0" role="status"></div>
   </div>
-</div>
+</form>
 
-<div id="chatwoot-test-result" class="alert d-none chatwoot-result-box" role="alert"></div>
-
-<div class="chatwoot-actions">
-  <button type="submit" name="update" value="1" class="btn btn-primary"><i class="ti ti-device-floppy"></i> {{ _x('button', 'Save') }}</button>
-  <button type="button" id="chatwoot-test-btn" class="btn btn-outline-secondary"><i class="ti ti-plug-connected"></i> {{ __('Test connection', 'chatwoot') }}</button>
-</div>
+<form id="chatwoot-rotate-form" action="{{ path('/plugins/chatwoot/front/config.form.php') }}" method="post" hidden>
+  <input type="hidden" name="_glpi_csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="rotate_token" value="1">
 </form>
 
 <script>
 (function () {
+    // ── Tabs (self-contained: no dependency on GLPI's own tab system) ──
+    var storageKey = 'glpi-plugin-chatwoot-config-tab';
+    var tabs = Array.prototype.slice.call(document.querySelectorAll('[data-chatwoot-tab]'));
+    var panes = Array.prototype.slice.call(document.querySelectorAll('[data-chatwoot-pane]'));
+
+    function showTab(name) {
+        if (!tabs.some(function (t) { return t.dataset.chatwootTab === name; })) {
+            name = tabs[0].dataset.chatwootTab;
+        }
+        tabs.forEach(function (t) {
+            var on = t.dataset.chatwootTab === name;
+            t.classList.toggle('active', on);
+            t.setAttribute('aria-selected', on ? 'true' : 'false');
+            t.tabIndex = on ? 0 : -1;
+        });
+        panes.forEach(function (p) { p.hidden = p.dataset.chatwootPane !== name; });
+        try { localStorage.setItem(storageKey, name); } catch (e) {}
+    }
+
+    tabs.forEach(function (t, i) {
+        t.addEventListener('click', function () { showTab(t.dataset.chatwootTab); });
+        t.addEventListener('keydown', function (ev) {
+            var next = ev.key === 'ArrowRight' ? i + 1 : ev.key === 'ArrowLeft' ? i - 1 : null;
+            if (next === null) return;
+            ev.preventDefault();
+            var target = tabs[(next + tabs.length) % tabs.length];
+            showTab(target.dataset.chatwootTab);
+            target.focus();
+        });
+    });
+
+    var saved = null;
+    try { saved = localStorage.getItem(storageKey); } catch (e) {}
+    showTab(saved || 'connection');
+
+    // ── API token show/hide ──
     var apiKeyInput = document.getElementById('chatwoot_api_key');
     if (apiKeyInput) {
         apiKeyInput.style.paddingRight = '2.5rem';
@@ -208,7 +284,7 @@
         toggle.type = 'button';
         toggle.className = 'chatwoot-eye-btn';
         toggle.innerHTML = '<i class="ti ti-eye"></i>';
-        toggle.setAttribute('aria-label', 'Show/hide');
+        toggle.setAttribute('aria-label', '{{ __('Show or hide the token', 'chatwoot')|e('js') }}');
         apiKeyInput.parentNode.appendChild(toggle);
         toggle.addEventListener('click', function () {
             var revealing = apiKeyInput.type === 'password';
@@ -217,6 +293,37 @@
         });
     }
 
+    // ── Panel: warnings when nothing would be shown ──
+    var inboxBox = document.querySelector('[data-chatwoot-inboxes]');
+    var inboxManual = document.querySelector('[data-chatwoot-inboxes-manual]');
+    var inboxEmpty = document.querySelector('[data-chatwoot-inboxes-empty]');
+    function refreshInboxWarning() {
+        if (!inboxEmpty) return;
+        var any = inboxBox
+            ? inboxBox.querySelector('input:checked') !== null
+            : (inboxManual && /\d/.test(inboxManual.value));
+        inboxEmpty.classList.toggle('d-none', !!any);
+    }
+    if (inboxBox) inboxBox.addEventListener('change', refreshInboxWarning);
+    if (inboxManual) inboxManual.addEventListener('input', refreshInboxWarning);
+    refreshInboxWarning();
+
+    var entitiesBox = document.querySelector('[data-chatwoot-entities]');
+    var entitiesEmpty = document.querySelector('[data-chatwoot-entities-empty]');
+    function refreshEntityScope() {
+        var restricted = document.querySelector('[data-chatwoot-scope][value="1"]');
+        var on = restricted && restricted.checked;
+        if (entitiesBox) entitiesBox.hidden = !on;
+        if (entitiesEmpty && entitiesBox) {
+            var hasEntity = entitiesBox.querySelector('input[name="target_entities[]"]') !== null;
+            entitiesEmpty.classList.toggle('d-none', !on || hasEntity);
+        }
+    }
+    document.querySelectorAll('[data-chatwoot-scope]').forEach(function (r) {
+        r.addEventListener('change', refreshEntityScope);
+    });
+
+    // ── Search pickers (profiles, groups, users, entities) ──
     var searchUrl = '{{ path('/plugins/chatwoot/ajax/search_targets.php') }}';
 
     function debounce(fn, delay) {
@@ -228,7 +335,7 @@
         };
     }
 
-    function initPicker(root) {
+    function initPicker(root, onChange) {
         var itemtype = root.dataset.itemtype;
         var fieldName = root.dataset.fieldName;
         var chipsBox = root.querySelector('.chatwoot-picker-chips');
@@ -264,13 +371,16 @@
             var removeBtn = document.createElement('button');
             removeBtn.type = 'button';
             removeBtn.innerHTML = '&times;';
+            removeBtn.setAttribute('aria-label', '{{ __('Remove', 'chatwoot')|e('js') }}');
             removeBtn.addEventListener('click', function () {
                 delete selected[id];
                 chip.remove();
+                onChange();
             });
             chip.appendChild(removeBtn);
 
             chipsBox.appendChild(chip);
+            onChange();
         }
 
         initialIds.forEach(function (id) {
@@ -321,27 +431,28 @@
         });
     }
 
-    document.querySelectorAll('.chatwoot-picker').forEach(initPicker);
+    document.querySelectorAll('.chatwoot-picker').forEach(function (root) {
+        initPicker(root, root.dataset.itemtype === 'Entity' ? refreshEntityScope : function () {});
+    });
+    refreshEntityScope();
 
+    // ── Test connection ──
     var btn = document.getElementById('chatwoot-test-btn');
     if (!btn) return;
 
     btn.addEventListener('click', function () {
         var resultBox = document.getElementById('chatwoot-test-result');
-        var baseUrlInput = document.getElementById('chatwoot_base_url');
-        var apiKeyEl = document.getElementById('chatwoot_api_key');
-        var accountIdInput = document.getElementById('chatwoot_account_id');
-        var inboxIdInput = document.getElementById('chatwoot_inbox_id');
         var csrfInput = document.querySelector('[name="_glpi_csrf_token"]');
+        var value = function (id) { var el = document.getElementById(id); return el ? el.value : ''; };
 
         resultBox.classList.add('d-none');
         btn.disabled = true;
 
         var params = new URLSearchParams();
-        params.set('base_url', baseUrlInput ? baseUrlInput.value : '');
-        params.set('api_key', apiKeyEl ? apiKeyEl.value : '');
-        params.set('account_id', accountIdInput ? accountIdInput.value : '');
-        params.set('inbox_id', inboxIdInput ? inboxIdInput.value : '');
+        params.set('base_url', value('chatwoot_base_url'));
+        params.set('api_key', value('chatwoot_api_key'));
+        params.set('account_id', value('chatwoot_account_id'));
+        params.set('inbox_id', value('chatwoot_inbox_id'));
         params.set('_glpi_csrf_token', csrfInput ? csrfInput.value : '');
 
         fetch('{{ path('/plugins/chatwoot/ajax/test.php') }}', {
@@ -371,6 +482,9 @@
 </script>
 
 {% else %}
-<div class="alert alert-warning">{{ __("You don't have permission to change the Chatwoot configuration.", 'chatwoot') }}</div>
+<div class="card-body">
+  <div class="alert alert-warning mb-0">{{ __("You don't have permission to change the Chatwoot configuration.", 'chatwoot') }}</div>
+</div>
 {% endif %}
-</div></div></div>
+</div>
+</div>
