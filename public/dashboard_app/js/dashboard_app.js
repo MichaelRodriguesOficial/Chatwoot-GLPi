@@ -229,9 +229,13 @@
         withCapability().then(function (ok) {
             if (seq !== requestSeq) return;
             if (!ok) {
-                listEl.innerHTML = identifyError === 'chatwoot_unreachable'
-                    ? '<div class="cw-error">' + esc(t('error_fetch')) + '</div>'
-                    : '<div class="cw-empty">' + esc(t('user_not_found')) + '</div>';
+                if (identifyError === 'chatwoot_unreachable') {
+                    listEl.innerHTML = '<div class="cw-error">' + esc(t('error_fetch')) + '</div>';
+                } else if (identifyError === 'inbox_not_allowed') {
+                    listEl.innerHTML = '<div class="cw-empty">' + esc(t('inbox_not_allowed')) + '</div>';
+                } else {
+                    listEl.innerHTML = '<div class="cw-empty">' + esc(t('user_not_found')) + '</div>';
+                }
                 return;
             }
 

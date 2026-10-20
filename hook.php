@@ -34,17 +34,23 @@ function plugin_chatwoot_install(): bool
             `dashboard_app_token` text DEFAULT NULL,
             `dashboard_app_id` int unsigned DEFAULT NULL,
             `show_private_followups` tinyint NOT NULL DEFAULT '0',
-            `restrict_entities` tinyint NOT NULL DEFAULT '0',
+            `restrict_entities` tinyint NOT NULL DEFAULT '1',
+            `panel_inbox_ids` text DEFAULT NULL,
             `date_creation` timestamp NULL DEFAULT NULL,
             `date_mod` timestamp NULL DEFAULT NULL,
             PRIMARY KEY (`id`)
         ) ENGINE=InnoDB DEFAULT CHARSET={$default_charset} COLLATE={$default_collation} ROW_FORMAT=DYNAMIC";
         $DB->doQuery($query);
 
+        // New installs start with the panel's ticket queries restricted to
+        // selected entities (none yet — the administrator picks them, or
+        // explicitly chooses "all entities"). Sites upgrading keep whatever
+        // scope they already had.
         $DB->insert($table, [
-            'id'            => 1,
-            'enabled'       => 0,
-            'date_creation' => date('Y-m-d H:i:s'),
+            'id'                => 1,
+            'enabled'           => 0,
+            'restrict_entities' => 1,
+            'date_creation'     => date('Y-m-d H:i:s'),
         ]);
     } else {
         // Upgrade path for sites coming from the 1.0.0 release (the only
@@ -75,6 +81,14 @@ function plugin_chatwoot_install(): bool
         if (!$DB->fieldExists($table, 'restrict_entities')) {
             $migration->addField($table, 'restrict_entities', 'bool', ['value' => 0, 'after' => 'show_private_followups']);
         }
+
+        // 1.0.2: the inboxes whose conversations the "GLPI" panel may serve.
+        // Filled with the widget's inbox right after the migration (see
+        // plugin_chatwoot_init_panel_inboxes()), so upgrading doesn't break a
+        // working panel; other inboxes (e.g. WhatsApp) are added by the admin.
+        if (!$DB->fieldExists($table, 'panel_inbox_ids')) {
+            $migration->addField($table, 'panel_inbox_ids', 'text', ['after' => 'restrict_entities']);
+        }
     }
 
     plugin_chatwoot_migrate_legacy_config($table);
@@ -91,7 +105,34 @@ function plugin_chatwoot_install(): bool
     // `text` first, or the encrypted value wouldn't fit.
     plugin_chatwoot_encrypt_legacy_dashboard_token($table);
 
+    plugin_chatwoot_init_panel_inboxes($table);
+
     return true;
+}
+
+/**
+ * The panel only serves conversations from the inboxes listed in
+ * `panel_inbox_ids` (fail closed when empty). On upgrade the column starts
+ * as NULL — never configured — and is seeded with the inbox the widget is
+ * already using, so the panel keeps working exactly as before. An empty
+ * string means the administrator explicitly unchecked every inbox, and is
+ * left alone.
+ */
+function plugin_chatwoot_init_panel_inboxes(string $table): void
+{
+    global $DB;
+
+    if (!$DB->tableExists($table) || !$DB->fieldExists($table, 'panel_inbox_ids')) {
+        return;
+    }
+
+    foreach ($DB->request(['SELECT' => ['id', 'inbox_id', 'panel_inbox_ids'], 'FROM' => $table]) as $row) {
+        $inbox_id = (int) ($row['inbox_id'] ?? 0);
+        if ($row['panel_inbox_ids'] !== null || $inbox_id <= 0) {
+            continue;
+        }
+        $DB->update($table, ['panel_inbox_ids' => (string) $inbox_id], ['id' => (int) $row['id']]);
+    }
 }
 
 /**

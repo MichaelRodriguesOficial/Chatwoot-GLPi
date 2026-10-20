@@ -34,5 +34,6 @@
   "proposed_the_solution": "proposed the solution",
   "internal": "Internal",
   "attachments": "Attachments",
-  "no_attachments": "No attachments on this ticket."
+  "no_attachments": "No attachments on this ticket.",
+  "inbox_not_allowed": "The GLPI panel isn't enabled for this inbox. An administrator can enable it under Setup > General > Chatwoot."
 }

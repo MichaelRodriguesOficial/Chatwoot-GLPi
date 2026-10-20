@@ -49,7 +49,7 @@ final class CapabilityTest extends TestCase
 
     public function testExpiredCapabilityIsRejected(): void
     {
-        $expired = rawurlencode((new \GLPIKey())->encrypt(json_encode(['uid' => 7, 'exp' => time() - 1])));
+        $expired = rawurlencode((new \GLPIKey())->encrypt(json_encode(['typ' => 'cap', 'uid' => 7, 'exp' => time() - 1])));
         $this->assertNull(Config::verifyCapability($expired));
     }
 
@@ -57,6 +57,12 @@ final class CapabilityTest extends TestCase
     {
         $this->assertNull(Config::verifyCapability(''));
         $this->assertNull(Config::verifyCapability(base64_encode(json_encode(['uid' => 7, 'exp' => time() + 300]))));
+    }
+
+    public function testUntypedPayloadIsRejected(): void
+    {
+        $untyped = rawurlencode((new \GLPIKey())->encrypt(json_encode(['uid' => 7, 'exp' => time() + 300])));
+        $this->assertNull(Config::verifyCapability($untyped));
     }
 
     public function testCapabilityExpiresAfterTheConfiguredTtl(): void

@@ -21,6 +21,15 @@ class Config extends CommonDBTM
      */
     public const ENCRYPTED_FIELDS = ['api_key', 'hmac_token', 'dashboard_app_token'];
 
+    /**
+     * Kind of payload inside each GLPIKey-encrypted token. Every verifier
+     * checks its own kind, so a per-document link can never be replayed as a
+     * capability (or the other way round) — they share the same encryption
+     * key and the same `uid`/`exp` fields.
+     */
+    private const TOKEN_TYPE_CAPABILITY    = 'cap';
+    private const TOKEN_TYPE_DOCUMENT_LINK = 'doc';
+
     /** Seconds a capability minted by dashboard_identify.php stays valid. */
     public const CAPABILITY_TTL = 300;
 
@@ -529,6 +538,7 @@ class Config extends CommonDBTM
     public static function mintDocumentLink(int $user_id, int $ticket_id, int $doc_id): string
     {
         $payload = json_encode([
+            'typ' => self::TOKEN_TYPE_DOCUMENT_LINK,
             'uid' => $user_id,
             'tid' => $ticket_id,
             'did' => $doc_id,
@@ -557,6 +567,7 @@ class Config extends CommonDBTM
         $payload = json_decode((string) $decrypted, true);
         if (
             !is_array($payload)
+            || ($payload['typ'] ?? null) !== self::TOKEN_TYPE_DOCUMENT_LINK
             || empty($payload['uid']) || empty($payload['tid']) || empty($payload['did']) || empty($payload['exp'])
             || (int) $payload['exp'] < time()
         ) {
@@ -584,6 +595,7 @@ class Config extends CommonDBTM
     public static function mintCapability(int $user_id, int $conversation_id = 0): string
     {
         $payload = json_encode([
+            'typ' => self::TOKEN_TYPE_CAPABILITY,
             'uid' => $user_id,
             'cid' => $conversation_id,
             'exp' => time() + self::CAPABILITY_TTL,
@@ -620,7 +632,11 @@ class Config extends CommonDBTM
         }
 
         $payload = json_decode((string) $decrypted, true);
-        if (!is_array($payload) || empty($payload['uid']) || empty($payload['exp'])) {
+        if (
+            !is_array($payload)
+            || ($payload['typ'] ?? null) !== self::TOKEN_TYPE_CAPABILITY
+            || empty($payload['uid']) || empty($payload['exp'])
+        ) {
             return null;
         }
         if ((int) $payload['exp'] < time()) {
@@ -891,6 +907,13 @@ class Config extends CommonDBTM
             return $contact;
         }
 
+        // Only conversations from the inboxes the administrator enabled for
+        // the panel: a leaked panel token can't reach every inbox of the
+        // account (1.0.1 re-review of HIGH 1). Fails closed when none is set.
+        if (!self::isPanelInboxAllowed($contact['inbox_id'])) {
+            return ['ok' => false, 'error' => 'inbox_not_allowed'];
+        }
+
         return [
             'ok'   => true,
             'user' => self::resolveUser($contact['identifier'], $contact['phone']),
@@ -898,7 +921,7 @@ class Config extends CommonDBTM
     }
 
     /**
-     * @return array{ok: bool, identifier?: string, phone?: string, error?: string}
+     * @return array{ok: bool, identifier?: string, phone?: string, inbox_id?: int, error?: string}
      */
     private static function fetchConversationContact(int $conversation_id): array
     {
@@ -945,7 +968,95 @@ class Config extends CommonDBTM
             return ['ok' => false, 'error' => 'chatwoot_unreachable'];
         }
 
-        return ['ok' => true] + self::extractConversationContact($data);
+        return ['ok' => true, 'inbox_id' => (int) ($data['inbox_id'] ?? 0)] + self::extractConversationContact($data);
+    }
+
+    /**
+     * Inbox ids whose conversations the "GLPI" panel may serve
+     * (`panel_inbox_ids`, comma-separated). Empty = none (fail closed).
+     *
+     * @return int[]
+     */
+    public static function panelInboxIds(?array $config = null): array
+    {
+        $config = $config ?? self::getConfig();
+        $ids    = array_map('intval', explode(',', (string) ($config['panel_inbox_ids'] ?? '')));
+        return array_values(array_unique(array_filter($ids, static fn (int $id) => $id > 0)));
+    }
+
+    public static function isPanelInboxAllowed(int $inbox_id): bool
+    {
+        return $inbox_id > 0 && in_array($inbox_id, self::panelInboxIds(), true);
+    }
+
+    /**
+     * Normalizes the inbox ids submitted by the configuration form (checkbox
+     * list, or the comma-separated fallback field) into the stored format.
+     */
+    public static function normalizePanelInboxIds(array $ids): string
+    {
+        $ids = array_values(array_unique(array_filter(array_map('intval', $ids), static fn (int $id) => $id > 0)));
+        sort($ids);
+        return implode(',', $ids);
+    }
+
+    /**
+     * Inboxes of the configured Chatwoot account, for the configuration
+     * screen's "panel inboxes" checklist (GET /api/v1/accounts/{id}/inboxes).
+     *
+     * @return array{ok: bool, inboxes?: array<int, array{id:int, name:string, channel:string}>, error?: string}
+     */
+    public static function fetchAccountInboxes(): array
+    {
+        $config     = self::getConfig();
+        $base_url   = rtrim((string) ($config['base_url'] ?? ''), '/');
+        $api_key    = (string) ($config['api_key'] ?? '');
+        $account_id = (string) ($config['account_id'] ?? '');
+
+        if (!self::isValidBaseUrl($base_url) || $api_key === '' || $account_id === '') {
+            return ['ok' => false, 'error' => 'not_configured'];
+        }
+
+        $ch = curl_init($base_url . '/api/v1/accounts/' . rawurlencode($account_id) . '/inboxes');
+        curl_setopt_array($ch, self::curlSecurityOptions() + [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_FOLLOWLOCATION => false,
+            CURLOPT_CONNECTTIMEOUT => 4,
+            CURLOPT_TIMEOUT        => 6,
+            CURLOPT_HTTPHEADER     => ['api_access_token: ' . $api_key, 'Accept: application/json'],
+        ]);
+        $body      = curl_exec($ch);
+        $http_code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        if ($http_code !== 200) {
+            return ['ok' => false, 'error' => 'HTTP ' . $http_code];
+        }
+
+        $data = json_decode((string) $body, true);
+        return ['ok' => true, 'inboxes' => self::extractInboxes(is_array($data) ? $data : [])];
+    }
+
+    /**
+     * @return array<int, array{id:int, name:string, channel:string}>
+     */
+    public static function extractInboxes(array $response): array
+    {
+        $inboxes = [];
+        foreach ((array) ($response['payload'] ?? []) as $inbox) {
+            $id = (int) ($inbox['id'] ?? 0);
+            if ($id <= 0) {
+                continue;
+            }
+            $inboxes[] = [
+                'id'      => $id,
+                'name'    => trim((string) ($inbox['name'] ?? '')) ?: ('#' . $id),
+                // "Channel::Whatsapp" -> "Whatsapp", "Channel::WebWidget" -> "WebWidget"
+                'channel' => preg_replace('/^Channel::/', '', (string) ($inbox['channel_type'] ?? '')),
+            ];
+        }
+        usort($inboxes, static fn ($a, $b) => strcasecmp($a['name'], $b['name']));
+        return $inboxes;
     }
 
     /**
@@ -2074,15 +2185,26 @@ class Config extends CommonDBTM
         }
 
         $targets = self::getTargets();
+        $config  = self::getConfig();
+
+        // Never configured (NULL, fresh install): suggest the widget's own
+        // inbox. An explicit empty selection ('') is shown as such.
+        $panel_inbox_ids = ($config['panel_inbox_ids'] ?? null) === null && (int) ($config['inbox_id'] ?? 0) > 0
+            ? [(int) $config['inbox_id']]
+            : self::panelInboxIds($config);
+        $panel_inboxes = self::fetchAccountInboxes();
 
         TemplateRenderer::getInstance()->display('@chatwoot/config.html.twig', [
-            'config'         => self::getConfig(),
+            'config'         => $config,
             'can_edit'       => Session::haveRight(self::$rightname, UPDATE),
             'targets'        => $targets,
             'profile_labels' => self::getLabelsByIds('Profile', $targets['Profile']),
             'group_labels'   => self::getLabelsByIds('Group', $targets['Group']),
             'user_labels'    => self::getLabelsByIds('User', $targets['User']),
             'entity_labels'  => self::getLabelsByIds('Entity', $targets['Entity'] ?? []),
+            'panel_inboxes'  => $panel_inboxes,
+            'panel_inbox_ids' => $panel_inbox_ids,
+            'plugin_version' => defined('PLUGIN_CHATWOOT_VERSION') ? PLUGIN_CHATWOOT_VERSION : '',
         ]);
     }
 
