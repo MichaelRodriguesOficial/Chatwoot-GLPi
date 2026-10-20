@@ -2,7 +2,7 @@
 
 use Glpi\Plugin\Hooks;
 
-define('PLUGIN_CHATWOOT_VERSION', '1.0.1');
+define('PLUGIN_CHATWOOT_VERSION', '1.0.2');
 define('PLUGIN_CHATWOOT_MIN_GLPI_VERSION', '11.0.0');
 define('PLUGIN_CHATWOOT_MAX_GLPI_VERSION', '11.9.99');
 

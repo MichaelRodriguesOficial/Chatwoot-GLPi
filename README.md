@@ -162,9 +162,11 @@ the panel already registered in Chatwoot working.
 
 ## ⚙️ Configuration
 
-**Setup > General > Chatwoot**
+**Setup > General > Chatwoot**. The screen is split into four tabs (**Connection**, **Widget**,
+**Who can see the widget** and **GLPI tab in Chatwoot**), with a status line on top showing
+whether the widget is active, the inbox is connected and the GLPI tab is registered.
 
-| Field | Where to find it in Chatwoot |
+| Field (Connection tab) | Where to find it in Chatwoot |
 |---|---|
 | **Chatwoot URL** | Your instance address, e.g. `https://chat.yourcompany.com` |
 | **API Access Token** | Profile settings > Access Token, preferably an **administrator's** |
@@ -176,21 +178,25 @@ Click **Test connection**, then **Save**. On save, the plugin:
 - fetches the **Website Token** and **HMAC Token** of the inbox (no copy/paste);
 - registers the **"GLPI" tab** under Integrations > Dashboard Apps in Chatwoot.
 
+Then, in the **GLPI tab in Chatwoot** tab, check the **inboxes** where agents should see the tab
+(for example the website widget *and* WhatsApp), and choose which tickets it may show.
+
 The API token field is always shown blank after saving. Leave it blank to keep the stored token.
 
 <details>
 <summary><b>All options</b></summary>
 
-| Section | Option | Default |
+| Tab | Option | Default |
 |---|---|---|
-| **Widget** | Enable widget | off |
+| **Widget** | Show the chat widget on GLPI pages | off |
 | | Position (left / right) | right |
 | | Bubble type (standard / expanded) | expanded |
 | | Launcher title | empty |
 | | Dark mode (auto / light / dark) | auto |
-| **Who sees the widget** | Profiles, Groups, Users | everyone authenticated |
-| **GLPI tab security** | Show internal/private follow-ups to Chatwoot agents | off |
-| | Restrict the panel to specific entities (sub-entities included) | off |
+| **Who can see the widget** | Profiles, Groups, Users | everyone authenticated |
+| **GLPI tab in Chatwoot** | Inboxes where the tab works | the widget's inbox |
+| | Which tickets: all entities, or selected entities (sub-entities included) | selected (new installs) |
+| | Show internal/private follow-ups to Chatwoot agents | off |
 | | Regenerate panel token (revokes the current one) | button |
 
 </details>
@@ -221,17 +227,18 @@ server-side from the first byte. GLPI-sourced labels are switched for that singl
 
 ## 🔐 Security
 
-Version 1.0.1 fixes every finding of the GLPI team's pre-publication security review
-([details in the changelog](CHANGELOG.md)).
+Versions 1.0.1 and 1.0.2 address the GLPI team's pre-publication security review and its
+re-review ([details in the changelog](CHANGELOG.md)).
 
 | Concern | How it's handled |
 |---|---|
 | **Stored secrets** | API Access Token, HMAC Token and panel token are encrypted with `GLPIKey` and re-encrypted by `security:change_key` (`Hooks::SECURED_FIELDS`). None is ever sent back to the browser. |
-| **Who the contact is** | The tab sends only the conversation id. The contact is fetched **server-side from the Chatwoot API**, so a leaked panel token can't be used to name an arbitrary GLPI user. |
-| **Panel authorization** | Panel token **plus** a 5-minute capability bound to one GLPI user and one conversation, both sent as **headers**, never in URLs. `Referrer-Policy: no-referrer`. Token can be regenerated anytime. |
+| **Who the contact is** | The tab sends only the conversation id. The contact and its inbox are fetched **server-side from the Chatwoot API**, so a leaked panel token can't be used to name an arbitrary GLPI user. |
+| **Which conversations** | Only conversations from the **inboxes enabled** in the configuration; nothing at all when none is enabled. |
+| **Panel authorization** | Panel token **plus** a 5-minute capability bound to one GLPI user and one conversation, both accepted **only as headers**, never in URLs. Capabilities and document links are typed, so one can't stand in for the other. `Referrer-Policy: no-referrer`. Token can be regenerated anytime. |
 | **Attachments** | Per-document signed links (user + ticket + document, 10 min). Ownership re-checked on every download. Inline only for images (not SVG) and PDF, like GLPI core; everything else is a download, with `nosniff` and a CSP sandbox. |
 | **Internal notes** | Private follow-ups and their files stay out of Chatwoot unless explicitly enabled. |
-| **Accounts & scope** | Only active, non-deleted GLPI users. Optional entity restriction. Identity lookups rate-limited per IP and logged. |
+| **Accounts & scope** | Only active, non-deleted GLPI users. Entity restriction on by default for new installs. Identity lookups rate-limited per IP and logged. |
 | **Widget code** | Always the static, documented `sdk.js` loader. Nothing returned by the Chatwoot API is executed. |
 | **Outbound calls** | `http`/`https` only, TLS verified, no redirects while carrying the API token, URL validated on save. |
 | **Framing & messages** | `frame-ancestors` limited to your Chatwoot. `postMessage` accepted only from its origin. |
@@ -246,6 +253,12 @@ Version 1.0.1 fixes every finding of the GLPI team's pre-publication security re
 
 Check under **Integrations > Dashboard Apps** whether "GLPI" exists. If not, save the plugin
 configuration again: the tab is registered on save, once the plugin reaches the inbox successfully.
+</details>
+
+<details>
+<summary><b>"The GLPI panel isn't enabled for this inbox"</b></summary>
+
+Check that inbox under **GLPI tab in Chatwoot > Inboxes** in the plugin configuration and save.
 </details>
 
 <details>
@@ -280,9 +293,9 @@ both would mean two plugin architectures, so installation is blocked on versions
 ## 🧪 Development
 
 The security-relevant logic is covered by a PHPUnit suite, run by [CI](.github/workflows/ci.yml) on
-PHP 8.1 to 8.4. It tests capabilities, signed document links, the inline allow-list, the
-attachments query scope, conversation-based identity, URL validation and the 1.0.0 → 1.0.1
-migration.
+PHP 8.1 to 8.4. It tests capabilities and signed document links (including that neither can stand
+in for the other), the inline allow-list, the attachments query scope, conversation-based identity,
+the inbox allow-list, URL validation and the upgrade migrations.
 
 ```bash
 composer install
