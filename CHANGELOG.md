@@ -1,5 +1,35 @@
 # Changelog
 
+## 1.0.2 — Re-review fixes and a tabbed configuration screen
+
+Addresses the GLPI team's re-review of 1.0.1.
+
+### Security
+
+- **HIGH 1 (narrowed further):** the "GLPI" tab only serves conversations from the inboxes the
+  administrator enables (new *Inboxes* checklist, loaded from the Chatwoot API). The server checks
+  the conversation's inbox, fetched from Chatwoot, before minting a capability, and refuses
+  everything when no inbox is enabled. A leaked panel token therefore can't reach every inbox of the
+  account. Upgrading enables the inbox the widget already uses, so the tab keeps working; other
+  inboxes (e.g. WhatsApp) are enabled by the administrator.
+- **HIGH 1:** new installs start with the tab restricted to selected entities. "Tickets from all
+  entities" remains an explicit choice, and upgrades keep their current scope.
+- **MEDIUM 3 → LOW:** the ticket list and detail endpoints accept the panel token and the
+  capability only as request headers. The `?t=` / `?cap=` query-string fallbacks are gone.
+- **New LOW:** capabilities and per-document links carry a type (`cap` / `doc`) that each verifier
+  checks, so a per-document link can no longer be replayed as a capability for the user's whole
+  ticket list.
+- The configuration screen's "Regenerate panel token" button has its own form, so pressing Enter in
+  any field can no longer trigger it.
+
+### Configuration screen
+
+- Reorganized into tabs: **Connection**, **Widget**, **Who can see the widget** and **GLPI tab in
+  Chatwoot**, with one Save button available from any tab. The last tab used is remembered.
+- A status line at the top shows whether the widget is active, the inbox is connected and the GLPI
+  tab is registered in Chatwoot.
+- Uses GLPI's theme colors, so it follows light and dark themes.
+
 ## 1.0.1 — Security hardening
 
 Addresses all 8 findings (2 HIGH, 3 MEDIUM, 3 LOW) from the GLPI Plugins catalog's pre-publication

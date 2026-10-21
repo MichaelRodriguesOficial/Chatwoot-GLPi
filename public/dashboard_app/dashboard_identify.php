@@ -52,8 +52,9 @@ if ($conversation_id <= 0) {
 
 $result = ChatwootConfig::resolveConversationUser($conversation_id);
 if (!$result['ok']) {
-    // conversation_not_found / not_configured / chatwoot_unreachable
-    http_response_code($result['error'] === 'chatwoot_unreachable' ? 502 : 404);
+    // conversation_not_found / not_configured / chatwoot_unreachable / inbox_not_allowed
+    $status = ['chatwoot_unreachable' => 502, 'inbox_not_allowed' => 403][$result['error']] ?? 404;
+    http_response_code($status);
     echo json_encode(['found' => false, 'error' => $result['error']]);
     return;
 }

@@ -34,5 +34,6 @@
   "proposed_the_solution": "propôs a solução",
   "internal": "Interno",
   "attachments": "Anexos",
-  "no_attachments": "Nenhum anexo neste chamado."
+  "no_attachments": "Nenhum anexo neste chamado.",
+  "inbox_not_allowed": "O painel GLPI não está habilitado para esta caixa de entrada. Um administrador pode habilitá-lo em Configurar > Geral > Chatwoot."
 }

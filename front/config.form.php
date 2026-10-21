@@ -89,6 +89,13 @@ if (isset($_POST['update'])) {
             'widget_dark_mode'       => in_array($_POST['widget_dark_mode'] ?? '', ['auto', 'light', 'dark'], true) ? $_POST['widget_dark_mode'] : 'auto',
             'show_private_followups' => !empty($_POST['show_private_followups']) ? 1 : 0,
             'restrict_entities'      => !empty($_POST['restrict_entities']) ? 1 : 0,
+            // Checklist of the account's inboxes, or — when the Chatwoot API
+            // couldn't list them — a comma-separated fallback field. Nothing
+            // checked is stored as '' (panel disabled everywhere), on purpose.
+            'panel_inbox_ids'        => ChatwootConfig::normalizePanelInboxIds(array_merge(
+                (array) ($_POST['panel_inbox_ids'] ?? []),
+                explode(',', (string) ($_POST['panel_inbox_ids_manual'] ?? ''))
+            )),
         ];
 
         // GLPI's own convention for stored secrets: a blank field means
