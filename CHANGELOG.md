@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.0.3 — Expired passwords
+
+### Fixed
+
+- With the plugin active, a user whose password had expired could not change it. GLPI shows the
+  "password expired" page on a partial session (no profile, no entity), and the widget loader
+  added to that page went through the firewall's default session check, which treats that
+  partial session as expired and ends it; the password form then failed its CSRF check. The
+  widget is no longer added to that page, and its loader now checks the session itself: a
+  partial or missing session gets an empty script and is left untouched.
+
 ## 1.0.2 — Re-review fixes and a tabbed configuration screen
 
 Addresses the GLPI team's re-review of 1.0.1.

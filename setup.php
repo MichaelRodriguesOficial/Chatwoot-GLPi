@@ -2,7 +2,7 @@
 
 use Glpi\Plugin\Hooks;
 
-define('PLUGIN_CHATWOOT_VERSION', '1.0.2');
+define('PLUGIN_CHATWOOT_VERSION', '1.0.3');
 define('PLUGIN_CHATWOOT_MIN_GLPI_VERSION', '11.0.0');
 define('PLUGIN_CHATWOOT_MAX_GLPI_VERSION', '11.9.99');
 
@@ -18,7 +18,13 @@ function plugin_init_chatwoot(): void
         return;
     }
 
-    $PLUGIN_HOOKS['add_javascript']['chatwoot'][] = 'js/chatwoot.js.php';
+    // Not on the "password expired" page: there GLPI runs a partial session
+    // (no profile, no entity) and any request checked by the firewall would
+    // end it, so the new password could no longer be submitted.
+    // ($_SESSION doesn't exist in CLI runs such as cron or bin/console.)
+    if (!(isset($_SESSION) && Session::mustChangePassword())) {
+        $PLUGIN_HOOKS['add_javascript']['chatwoot'][] = 'js/chatwoot.js.php';
+    }
     $PLUGIN_HOOKS['add_css']['chatwoot'][] = 'css/chatwoot.css';
 
     // The Chatwoot dashboard (contact photo + the "GLPI" Dashboard App panel)
@@ -43,6 +49,20 @@ function plugin_init_chatwoot(): void
         \Glpi\Http\Firewall::addPluginStrategyForLegacyScripts(
             'chatwoot',
             $public_no_auth_paths,
+            \Glpi\Http\Firewall::STRATEGY_NO_CHECK
+        );
+    }
+    // The widget loader is added to every page GLPI renders, including the
+    // "password expired" page, the only page a user with an expired password
+    // can reach. That page runs on a partial session (no profile, no entity),
+    // which the default firewall check treats as expired: it destroyed the
+    // session, and the password form then failed its CSRF check. The script
+    // therefore does its own session check (see public/js/chatwoot.js.php).
+    // It is NOT stateless: it needs the user's session.
+    if (class_exists(\Glpi\Http\Firewall::class) && method_exists(\Glpi\Http\Firewall::class, 'addPluginStrategyForLegacyScripts')) {
+        \Glpi\Http\Firewall::addPluginStrategyForLegacyScripts(
+            'chatwoot',
+            '#^/js/chatwoot\.js\.php$#',
             \Glpi\Http\Firewall::STRATEGY_NO_CHECK
         );
     }

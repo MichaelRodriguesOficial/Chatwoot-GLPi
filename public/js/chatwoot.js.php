@@ -12,6 +12,21 @@ header('Content-Type: application/javascript; charset=UTF-8');
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 header('Pragma: no-cache');
 
+// This script runs with Firewall::STRATEGY_NO_CHECK (see setup.php), so the
+// session check happens here. A partial session (password expired: no
+// profile, no entity) or no session at all gets an empty script and is left
+// untouched. Only a complete session goes through the same check the
+// firewall applies to authenticated scripts.
+if (
+    Session::getLoginUserID() === false
+    || Session::mustChangePassword()
+    || !isset($_SESSION['glpiactiveprofile']['id'], $_SESSION['glpiactive_entity'])
+) {
+    echo "/* Chatwoot: no complete session. */\n";
+    return;
+}
+Session::checkLoginUser();
+
 $c = ChatwootConfig::getConfig();
 
 if (empty($c['enabled']) || empty($c['base_url']) || empty($c['website_token'])) {
