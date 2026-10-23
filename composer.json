@@ -2,7 +2,7 @@
   "name": "community/glpi-chatwoot",
   "description": "Chatwoot integration for GLPI",
   "type": "glpi-plugin",
-  "version": "1.0.3",
+  "version": "1.0.2",
   "license": "AGPL-3.0-or-later",
   "require": {
     "php": ">=8.1"
